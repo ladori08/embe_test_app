@@ -8,10 +8,12 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { FormField, FormMessage } from '@/components/ui/form';
 import { useAuth } from '@/components/auth-context';
+import { useI18n } from '@/components/language-context';
 
 export default function LoginPage() {
   const router = useRouter();
   const { login, user } = useAuth();
+  const { t } = useI18n();
   const [email, setEmail] = useState('admin@example.com');
   const [password, setPassword] = useState('Admin123!');
   const [error, setError] = useState('');
@@ -25,7 +27,7 @@ export default function LoginPage() {
       await login(email, password);
       router.push('/shop');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed');
+      setError(err instanceof Error ? err.message : t('login.failed'));
     } finally {
       setLoading(false);
     }
@@ -36,21 +38,25 @@ export default function LoginPage() {
       <TopNav />
       <main className="mx-auto max-w-md px-4 py-10">
         <Card className="reveal">
-          <CardTitle className="font-script text-4xl">Welcome Back</CardTitle>
-          <CardDescription>Use seeded accounts or your own credentials.</CardDescription>
+          <CardTitle className="font-script text-4xl">{t('login.welcomeBack')}</CardTitle>
+          <CardDescription>{t('login.subtitle')}</CardDescription>
           <CardContent>
             <form className="space-y-4" onSubmit={onSubmit}>
-              <FormField label="Email">
+              <FormField label={t('login.email')}>
                 <Input value={email} onChange={e => setEmail(e.target.value)} type="email" />
               </FormField>
-              <FormField label="Password">
+              <FormField label={t('login.password')}>
                 <Input value={password} onChange={e => setPassword(e.target.value)} type="password" />
               </FormField>
               {error && <FormMessage>{error}</FormMessage>}
               <Button className="w-full" disabled={loading}>
-                {loading ? 'Signing in...' : 'Sign in'}
+                {loading ? t('login.signingIn') : t('login.signIn')}
               </Button>
-              {user && <p className="text-sm text-muted">You are signed in as {user.email}</p>}
+              {user && (
+                <p className="text-sm text-muted">
+                  {t('login.signedInAs', { email: user.email })}
+                </p>
+              )}
             </form>
           </CardContent>
         </Card>
