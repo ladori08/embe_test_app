@@ -4,9 +4,11 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Role } from '@/lib/types';
 import { useAuth } from '@/components/auth-context';
+import { useI18n } from '@/components/language-context';
 
 export function RequireRole({ role, children }: { role: Role; children: React.ReactNode }) {
   const { user, loading } = useAuth();
+  const { t } = useI18n();
   const router = useRouter();
 
   useEffect(() => {
@@ -20,7 +22,7 @@ export function RequireRole({ role, children }: { role: Role; children: React.Re
   }, [loading, user, role, router]);
 
   if (loading || !user || !user.roles.includes(role)) {
-    return <div className="p-6 text-sm text-muted">Checking permission...</div>;
+    return <div className="p-6 text-sm text-muted">{t('permission.checking')}</div>;
   }
 
   return <>{children}</>;

@@ -8,9 +8,9 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useCart } from '@/components/cart-context';
+import { useI18n } from '@/components/language-context';
 import { api } from '@/lib/api';
 import { Product } from '@/lib/types';
-import { money } from '@/lib/utils';
 
 export default function ProductDetailPage() {
   const params = useParams<{ id: string }>();
@@ -18,6 +18,7 @@ export default function ProductDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const { addItem } = useCart();
+  const { t, money } = useI18n();
 
   useEffect(() => {
     if (!params.id) return;
@@ -33,9 +34,9 @@ export default function ProductDetailPage() {
       <TopNav />
       <main className="mx-auto max-w-4xl px-4 py-8">
         <Link href="/shop" className="text-sm text-muted underline">
-          Back to shop
+          {t('product.backToShop')}
         </Link>
-        {loading && <Card className="mt-3">Loading product...</Card>}
+        {loading && <Card className="mt-3">{t('product.loading')}</Card>}
         {error && <Card className="mt-3 text-red-600">{error}</Card>}
         {product && (
           <Card className="mt-3 reveal">
@@ -43,13 +44,13 @@ export default function ProductDetailPage() {
             <p className="mt-2 text-muted">{product.category}</p>
             <div className="mt-4 flex items-center gap-3">
               <span className="text-2xl font-semibold">{money(product.price)}</span>
-              <Badge>Stock {product.currentStock}</Badge>
+              <Badge>{t('product.stock', { stock: product.currentStock })}</Badge>
             </div>
-            <p className="mt-3 text-sm text-muted">Crafted in-house with premium ingredients and a warm cafe touch.</p>
+            <p className="mt-3 text-sm text-muted">{t('product.description')}</p>
             <div className="mt-5 flex gap-3">
-              <Button onClick={() => addItem(product)}>Add to Cart</Button>
+              <Button onClick={() => addItem(product)}>{t('shop.addToCart')}</Button>
               <Link href="/shop/checkout">
-                <Button variant="outline">Checkout Now</Button>
+                <Button variant="outline">{t('product.checkoutNow')}</Button>
               </Link>
             </div>
           </Card>
