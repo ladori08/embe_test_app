@@ -1,0 +1,27 @@
+spring:
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://localhost:27017/embe?replicaSet=rs0}
+  jackson:
+    default-property-inclusion: non_null
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 5MB
+
+server:
+  port: 8080
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+embe:
+  jwt:
+    secret: ${JWT_SECRET:0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF}
+    expirationMinutes: 240
+    cookieName: EMBE_TOKEN
+
+logging:
+  level:
+    com.embe.backend: INFO

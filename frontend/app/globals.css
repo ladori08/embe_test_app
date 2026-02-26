@@ -1,0 +1,37 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-background text-ink font-body antialiased;
+  background-image:
+    radial-gradient(circle at 10% 10%, rgba(244, 154, 87, 0.12), transparent 22%),
+    radial-gradient(circle at 90% 20%, rgba(244, 154, 87, 0.08), transparent 18%),
+    linear-gradient(180deg, #faf7f2 0%, #fffdf9 100%);
+}
+
+.scribble {
+  position: absolute;
+  width: 120px;
+  height: 60px;
+  opacity: 0.35;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.reveal {
+  animation: rise 420ms ease-out both;
+}
