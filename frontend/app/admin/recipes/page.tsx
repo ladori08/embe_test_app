@@ -10,6 +10,7 @@ import { Select } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { useI18n } from '@/components/language-context';
 import { api } from '@/lib/api';
 import { Ingredient, Product, Recipe } from '@/lib/types';
 
@@ -23,6 +24,7 @@ export default function AdminRecipesPage() {
   const [productId, setProductId] = useState('');
   const [yieldQty, setYieldQty] = useState(1);
   const [lines, setLines] = useState([{ ingredientId: '', qtyPerBatch: 0 }]);
+  const { t } = useI18n();
 
   const productName = useMemo(() => new Map(products.map(p => [p.id, p.name])), [products]);
 
@@ -38,7 +40,7 @@ export default function AdminRecipesPage() {
       setIngredients(ingredientList);
       if (!productId && productList.length > 0) setProductId(productList[0].id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load data');
+      setError(err instanceof Error ? err.message : t('admin.recipes.failed'));
     }
   };
 
@@ -70,25 +72,25 @@ export default function AdminRecipesPage() {
     <>
       <TopNav />
       <RequireRole role="ADMIN">
-        <AdminShell title="Recipes">
+        <AdminShell title={t('admin.nav.recipes')}>
           <Card>
             {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
             <Tabs value={tab} onValueChange={setTab}>
               <TabsList>
-                <TabsTrigger value="list">Recipes</TabsTrigger>
-                <TabsTrigger value="create">Create Recipe</TabsTrigger>
+                <TabsTrigger value="list">{t('admin.recipes.tab.list')}</TabsTrigger>
+                <TabsTrigger value="create">{t('admin.recipes.tab.create')}</TabsTrigger>
               </TabsList>
 
               <TabsContent value="list">
                 {recipes.length === 0 ? (
-                  <p className="text-sm text-muted">No recipes yet.</p>
+                  <p className="text-sm text-muted">{t('admin.recipes.empty')}</p>
                 ) : (
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Product</TableHead>
-                        <TableHead>Yield</TableHead>
-                        <TableHead>Ingredients</TableHead>
+                        <TableHead>{t('admin.recipes.product')}</TableHead>
+                        <TableHead>{t('admin.recipes.yield')}</TableHead>
+                        <TableHead>{t('admin.recipes.ingredients')}</TableHead>
                         <TableHead></TableHead>
                       </TableRow>
                     </TableHeader>
@@ -100,7 +102,7 @@ export default function AdminRecipesPage() {
                           <TableCell>{recipe.items.length}</TableCell>
                           <TableCell className="text-right">
                             <button className="text-sm text-red-600 underline" onClick={() => remove(recipe.id)}>
-                              Delete
+                              {t('common.delete')}
                             </button>
                           </TableCell>
                         </TableRow>
@@ -119,7 +121,7 @@ export default function AdminRecipesPage() {
                       </option>
                     ))}
                   </Select>
-                  <Input type="number" value={yieldQty} onChange={e => setYieldQty(Number(e.target.value))} placeholder="Yield per batch" />
+                  <Input type="number" value={yieldQty} onChange={e => setYieldQty(Number(e.target.value))} placeholder={t('admin.recipes.yieldPerBatch')} />
                   <div className="space-y-2">
                     {lines.map((line, index) => (
                       <div key={index} className="grid grid-cols-[1fr_140px] gap-2">
@@ -131,7 +133,7 @@ export default function AdminRecipesPage() {
                             )
                           }
                         >
-                          <option value="">Select ingredient</option>
+                          <option value="">{t('admin.recipes.selectIngredient')}</option>
                           {ingredients.map(ingredient => (
                             <option key={ingredient.id} value={ingredient.id}>
                               {ingredient.name}
@@ -140,7 +142,7 @@ export default function AdminRecipesPage() {
                         </Select>
                         <Input
                           type="number"
-                          placeholder="Qty"
+                          placeholder={t('admin.recipes.qty')}
                           value={line.qtyPerBatch}
                           onChange={e =>
                             setLines(prev =>
@@ -153,9 +155,9 @@ export default function AdminRecipesPage() {
                   </div>
                   <div className="flex gap-2">
                     <Button type="button" variant="outline" onClick={addLine}>
-                      Add Ingredient Line
+                      {t('admin.recipes.addLine')}
                     </Button>
-                    <Button type="submit">Save Recipe</Button>
+                    <Button type="submit">{t('admin.recipes.save')}</Button>
                   </div>
                 </form>
               </TabsContent>

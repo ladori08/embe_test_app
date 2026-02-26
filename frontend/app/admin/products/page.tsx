@@ -10,9 +10,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
+import { useI18n } from '@/components/language-context';
 import { api } from '@/lib/api';
 import { Product } from '@/lib/types';
-import { money } from '@/lib/utils';
 
 const emptyForm = { name: '', sku: '', category: '', price: 0, cost: 0, currentStock: 0, isActive: true, images: [] as string[] };
 
@@ -23,6 +23,7 @@ export default function AdminProductsPage() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState<any>(emptyForm);
+  const { t, money } = useI18n();
 
   const load = () =>
     api
@@ -74,27 +75,27 @@ export default function AdminProductsPage() {
     <>
       <TopNav />
       <RequireRole role="ADMIN">
-        <AdminShell title="Products">
+        <AdminShell title={t('admin.nav.products')}>
           <Card>
             <div className="mb-3 flex justify-between">
-              <p className="text-sm text-muted">Manage products shown in storefront.</p>
-              <Button onClick={openCreate}>Add Product</Button>
+              <p className="text-sm text-muted">{t('admin.products.help')}</p>
+              <Button onClick={openCreate}>{t('admin.products.add')}</Button>
             </div>
             {loading ? (
-              <p className="text-sm text-muted">Loading products...</p>
+              <p className="text-sm text-muted">{t('admin.products.loading')}</p>
             ) : error ? (
               <p className="text-sm text-red-600">{error}</p>
             ) : items.length === 0 ? (
-              <p className="text-sm text-muted">No products yet.</p>
+              <p className="text-sm text-muted">{t('admin.products.empty')}</p>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>SKU</TableHead>
-                    <TableHead>Price</TableHead>
-                    <TableHead>Stock</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>{t('admin.products.name')}</TableHead>
+                    <TableHead>{t('admin.products.sku')}</TableHead>
+                    <TableHead>{t('admin.products.price')}</TableHead>
+                    <TableHead>{t('admin.products.stock')}</TableHead>
+                    <TableHead>{t('admin.products.status')}</TableHead>
                     <TableHead></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -105,13 +106,13 @@ export default function AdminProductsPage() {
                       <TableCell>{item.sku}</TableCell>
                       <TableCell>{money(item.price)}</TableCell>
                       <TableCell>{item.currentStock}</TableCell>
-                      <TableCell>{item.isActive ? 'Active' : 'Hidden'}</TableCell>
+                      <TableCell>{item.isActive ? t('admin.products.active') : t('admin.products.hidden')}</TableCell>
                       <TableCell className="text-right">
                         <button className="mr-3 text-sm underline" onClick={() => openEdit(item)}>
-                          Edit
+                          {t('common.edit')}
                         </button>
                         <button className="text-sm text-red-600 underline" onClick={() => remove(item.id)}>
-                          Delete
+                          {t('common.delete')}
                         </button>
                       </TableCell>
                     </TableRow>
@@ -124,20 +125,20 @@ export default function AdminProductsPage() {
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>{editing ? 'Edit product' : 'Add product'}</DialogTitle>
+                <DialogTitle>{editing ? t('admin.products.edit') : t('admin.products.create')}</DialogTitle>
               </DialogHeader>
               <form onSubmit={submit} className="space-y-3">
-                <Input placeholder="Name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
-                <Input placeholder="SKU" value={form.sku} onChange={e => setForm({ ...form, sku: e.target.value })} required />
-                <Input placeholder="Category" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} required />
-                <Input type="number" placeholder="Price" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} required />
-                <Input type="number" placeholder="Cost" value={form.cost} onChange={e => setForm({ ...form, cost: e.target.value })} required />
-                <Input type="number" placeholder="Current stock" value={form.currentStock} onChange={e => setForm({ ...form, currentStock: e.target.value })} required />
+                <Input placeholder={t('admin.products.name')} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
+                <Input placeholder={t('admin.products.sku')} value={form.sku} onChange={e => setForm({ ...form, sku: e.target.value })} required />
+                <Input placeholder={t('admin.products.category')} value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} required />
+                <Input type="number" placeholder={t('admin.products.price')} value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} required />
+                <Input type="number" placeholder={t('admin.products.cost')} value={form.cost} onChange={e => setForm({ ...form, cost: e.target.value })} required />
+                <Input type="number" placeholder={t('admin.products.currentStock')} value={form.currentStock} onChange={e => setForm({ ...form, currentStock: e.target.value })} required />
                 <Select value={String(form.isActive)} onChange={e => setForm({ ...form, isActive: e.target.value === 'true' })}>
-                  <option value="true">Active</option>
-                  <option value="false">Inactive</option>
+                  <option value="true">{t('admin.products.active')}</option>
+                  <option value="false">{t('admin.products.inactive')}</option>
                 </Select>
-                <Button className="w-full">Save</Button>
+                <Button className="w-full">{t('common.save')}</Button>
               </form>
             </DialogContent>
           </Dialog>
