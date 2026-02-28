@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { FormField } from '@/components/ui/form';
 import { Select } from '@/components/ui/select';
 import { api } from '@/lib/api';
 import { Product } from '@/lib/types';
@@ -127,16 +128,31 @@ export default function AdminProductsPage() {
                 <DialogTitle>{editing ? 'Edit product' : 'Add product'}</DialogTitle>
               </DialogHeader>
               <form onSubmit={submit} className="space-y-3">
-                <Input placeholder="Name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
-                <Input placeholder="SKU" value={form.sku} onChange={e => setForm({ ...form, sku: e.target.value })} required />
-                <Input placeholder="Category" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} required />
-                <Input type="number" placeholder="Price" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} required />
-                <Input type="number" placeholder="Cost" value={form.cost} onChange={e => setForm({ ...form, cost: e.target.value })} required />
-                <Input type="number" placeholder="Current stock" value={form.currentStock} onChange={e => setForm({ ...form, currentStock: e.target.value })} required />
-                <Select value={String(form.isActive)} onChange={e => setForm({ ...form, isActive: e.target.value === 'true' })}>
-                  <option value="true">Active</option>
-                  <option value="false">Inactive</option>
-                </Select>
+                <FormField label="Product Name">
+                  <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
+                </FormField>
+                <FormField label="SKU (unique inventory code)">
+                  <Input value={form.sku} onChange={e => setForm({ ...form, sku: e.target.value })} required />
+                  <p className="text-xs text-muted">Example: CROISSANT-BTR-001. SKU must be unique.</p>
+                </FormField>
+                <FormField label="Category">
+                  <Input value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} required />
+                </FormField>
+                <FormField label="Price">
+                  <Input type="number" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} required />
+                </FormField>
+                <FormField label="Cost">
+                  <Input type="number" value={form.cost} onChange={e => setForm({ ...form, cost: e.target.value })} required />
+                </FormField>
+                <FormField label="Current Stock">
+                  <Input type="number" value={form.currentStock} onChange={e => setForm({ ...form, currentStock: e.target.value })} required />
+                </FormField>
+                <FormField label="Visibility">
+                  <Select value={String(form.isActive)} onChange={e => setForm({ ...form, isActive: e.target.value === 'true' })}>
+                    <option value="true">Active</option>
+                    <option value="false">Inactive</option>
+                  </Select>
+                </FormField>
                 <Button className="w-full">Save</Button>
               </form>
             </DialogContent>
