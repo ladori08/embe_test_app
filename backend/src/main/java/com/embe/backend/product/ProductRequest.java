@@ -10,7 +10,6 @@ import java.util.List;
 public record ProductRequest(
         @NotBlank(message = "Product name is required")
         String name,
-        @NotBlank(message = "SKU is required")
         String sku,
         @NotBlank(message = "Category is required")
         String category,

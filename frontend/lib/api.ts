@@ -60,6 +60,8 @@ export const api = {
   deleteIngredient: (id: string) => request<void>(`/api/admin/ingredients/${id}`, { method: 'DELETE' }),
 
   listProductsAdmin: () => request<Product[]>('/api/admin/products'),
+  nextProductSku: (category: string) =>
+    request<{ sku: string }>(`/api/admin/products/next-sku?category=${encodeURIComponent(category)}`),
   createProduct: (payload: Partial<Product>) => request<Product>('/api/admin/products', { method: 'POST', body: JSON.stringify(payload) }),
   updateProduct: (id: string, payload: Partial<Product>) => request<Product>(`/api/admin/products/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
   deleteProduct: (id: string) => request<void>(`/api/admin/products/${id}`, { method: 'DELETE' }),

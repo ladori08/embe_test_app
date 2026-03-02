@@ -37,20 +37,51 @@ export default function AdminProductsPage() {
     load();
   }, []);
 
+  useEffect(() => {
+    if (!open || editing) return;
+    const category = String(form.category || '').trim();
+    if (!category) {
+      setForm((prev: any) => (prev.sku ? { ...prev, sku: '' } : prev));
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      api
+        .nextProductSku(category)
+        .then(({ sku }) => {
+          setForm((prev: any) => {
+            if (String(prev.category || '').trim() !== category) {
+              return prev;
+            }
+            return { ...prev, sku };
+          });
+        })
+        .catch(err => setError(err.message));
+    }, 250);
+
+    return () => window.clearTimeout(timer);
+  }, [open, editing, form.category]);
+
   const openCreate = () => {
     setEditing(null);
     setForm(emptyForm);
+    setError('');
     setOpen(true);
   };
 
   const openEdit = (item: Product) => {
     setEditing(item);
     setForm(item);
+    setError('');
     setOpen(true);
   };
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (!editing && !String(form.sku || '').trim()) {
+      setError(t('admin.products.skuRequired'));
+      return;
+    }
     const payload = {
       ...form,
       price: Number(form.price),
@@ -132,12 +163,12 @@ export default function AdminProductsPage() {
                 <FormField label={t('admin.products.name')}>
                   <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
                 </FormField>
-                <FormField label={t('admin.products.sku')}>
-                  <Input value={form.sku} onChange={e => setForm({ ...form, sku: e.target.value })} required />
-                  <p className="text-xs text-muted">{t('admin.products.skuHelp')}</p>
-                </FormField>
                 <FormField label={t('admin.products.category')}>
                   <Input value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} required />
+                </FormField>
+                <FormField label={t('admin.products.skuLabel')}>
+                  <Input value={form.sku} readOnly className="bg-[#f8f1e8] font-mono" />
+                  <p className="text-xs text-muted">{t('admin.products.skuHelp')}</p>
                 </FormField>
                 <FormField label={t('admin.products.price')}>
                   <Input type="number" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} required />
