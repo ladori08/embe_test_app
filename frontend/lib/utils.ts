@@ -6,5 +6,6 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function money(value: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value || 0);
+  const safeValue = Number.isFinite(value) ? value : 0;
+  return new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(safeValue);
 }

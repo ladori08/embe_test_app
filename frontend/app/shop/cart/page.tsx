@@ -10,7 +10,7 @@ import { useI18n } from '@/components/language-context';
 
 export default function CartPage() {
   const { items, subtotal, updateQty, removeItem } = useCart();
-  const { t, money } = useI18n();
+  const { t, moneyCompact } = useI18n();
 
   return (
     <>
@@ -30,7 +30,7 @@ export default function CartPage() {
               <Card key={item.productId} className="flex items-center justify-between gap-4">
                 <div>
                   <p className="font-semibold">{item.name}</p>
-                  <p className="text-sm text-muted">{money(item.price)}</p>
+                  <p className="text-sm text-muted">{moneyCompact(item.price)}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <Input
@@ -49,7 +49,7 @@ export default function CartPage() {
             <Card>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted">{t('common.subtotal')}</span>
-                <span className="text-lg font-semibold">{money(subtotal)}</span>
+                <span className="text-lg font-semibold">{moneyCompact(subtotal)}</span>
               </div>
               <Link href="/shop/checkout" className="mt-3 inline-block w-full">
                 <Button className="w-full">{t('cart.proceedToCheckout')}</Button>
