@@ -22,6 +22,7 @@ public record ProductRequest(
         @DecimalMin(value = "0", message = "Stock cannot be negative")
         BigDecimal currentStock,
         Boolean isActive,
-        List<String> images
+        List<String> images,
+        Boolean regenerateSku
 ) {
 }

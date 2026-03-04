@@ -1,5 +1,6 @@
 package com.embe.backend.product;
 
+import com.embe.backend.category.ProductCategoryService;
 import com.embe.backend.common.ApiException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -22,10 +23,16 @@ public class ProductService {
 
     private final ProductRepository productRepository;
     private final ProductStockLogRepository productStockLogRepository;
+    private final ProductCategoryService productCategoryService;
 
-    public ProductService(ProductRepository productRepository, ProductStockLogRepository productStockLogRepository) {
+    public ProductService(
+            ProductRepository productRepository,
+            ProductStockLogRepository productStockLogRepository,
+            ProductCategoryService productCategoryService
+    ) {
         this.productRepository = productRepository;
         this.productStockLogRepository = productStockLogRepository;
+        this.productCategoryService = productCategoryService;
     }
 
     public List<ProductResponse> listAll() {
@@ -44,19 +51,21 @@ public class ProductService {
     }
 
     public String previewNextSku(String category) {
-        String prefix = buildCategoryPrefix(category);
+        String categoryName = productCategoryService.requireExistingCategoryName(category);
+        String prefix = buildCategoryPrefix(categoryName);
         int nextSequence = nextSequenceForPrefix(prefix);
         return formatSku(prefix, nextSequence);
     }
 
     public ProductResponse create(ProductRequest request) {
+        String categoryName = productCategoryService.requireExistingCategoryName(request.category());
         Product product = new Product();
-        applyCommonFields(product, request);
+        applyCommonFields(product, request, categoryName);
         Instant now = Instant.now();
         product.setCreatedAt(now);
         product.setUpdatedAt(now);
 
-        String prefix = buildCategoryPrefix(request.category());
+        String prefix = buildCategoryPrefix(categoryName);
         int initialSequence = nextSequenceForPrefix(prefix);
 
         for (int attempt = 0; attempt < SKU_MAX_RETRIES; attempt++) {
@@ -80,19 +89,23 @@ public class ProductService {
 
     public ProductResponse update(String id, ProductRequest request) {
         Product product = getEntity(id);
+        String categoryName = productCategoryService.requireExistingCategoryNameOrCurrent(request.category(), product.getCategory());
+        applyCommonFields(product, request, categoryName);
+        product.setUpdatedAt(Instant.now());
+
+        if (Boolean.TRUE.equals(request.regenerateSku())) {
+            return saveWithRegeneratedSku(product, categoryName);
+        }
+
         String requestedSku = request.sku() == null ? "" : request.sku().trim().toUpperCase(Locale.ROOT);
         String finalSku = requestedSku.isBlank() ? product.getSku() : requestedSku;
-
         productRepository.findBySkuIgnoreCase(finalSku)
                 .filter(found -> !found.getId().equals(id))
                 .ifPresent(existing -> {
                     throw new ApiException(HttpStatus.CONFLICT, "SKU already exists");
                 });
-
-        applyCommonFields(product, request);
         product.setSku(finalSku);
-        product.setUpdatedAt(Instant.now());
-        return toResponse(productRepository.save(product));
+        return saveWithManualSku(product);
     }
 
     public void delete(String id) {
@@ -133,9 +146,9 @@ public class ProductService {
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Product not found"));
     }
 
-    private void applyCommonFields(Product product, ProductRequest request) {
+    private void applyCommonFields(Product product, ProductRequest request, String categoryName) {
         product.setName(request.name().trim());
-        product.setCategory(request.category().trim());
+        product.setCategory(categoryName);
         product.setPrice(request.price());
         product.setCost(request.cost() == null ? BigDecimal.ZERO : request.cost());
         product.setCurrentStock(request.currentStock());
@@ -200,6 +213,33 @@ public class ProductService {
 
     private String formatSku(String prefix, int sequence) {
         return prefix + "-" + String.format("%0" + SKU_SEQUENCE_DIGITS + "d", sequence);
+    }
+
+    private ProductResponse saveWithRegeneratedSku(Product product, String categoryName) {
+        String prefix = buildCategoryPrefix(categoryName);
+        int initialSequence = nextSequenceForPrefix(prefix);
+        for (int attempt = 0; attempt < SKU_MAX_RETRIES; attempt++) {
+            product.setSku(formatSku(prefix, initialSequence + attempt));
+            try {
+                return toResponse(productRepository.save(product));
+            } catch (DataIntegrityViolationException ex) {
+                if (!isDuplicateKey(ex)) {
+                    throw ex;
+                }
+            }
+        }
+        throw new ApiException(HttpStatus.CONFLICT, "Unable to generate unique SKU for this category");
+    }
+
+    private ProductResponse saveWithManualSku(Product product) {
+        try {
+            return toResponse(productRepository.save(product));
+        } catch (DataIntegrityViolationException ex) {
+            if (isDuplicateKey(ex)) {
+                throw new ApiException(HttpStatus.CONFLICT, "SKU already exists");
+            }
+            throw ex;
+        }
     }
 
     private boolean isDuplicateKey(DataIntegrityViolationException ex) {

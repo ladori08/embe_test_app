@@ -28,6 +28,13 @@ export interface Product {
   images?: string[];
 }
 
+export interface ProductCategory {
+  id: string;
+  name: string;
+  sku: string;
+  legacySkus?: string[];
+}
+
 export interface RecipeItem {
   ingredientId: string;
   ingredientName?: string;
