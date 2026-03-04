@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input';
 import { FormField } from '@/components/ui/form';
 import { Select } from '@/components/ui/select';
+import { useI18n } from '@/components/language-context';
 import { api } from '@/lib/api';
 import { Ingredient } from '@/lib/types';
 
@@ -23,6 +24,7 @@ export default function AdminIngredientsPage() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Ingredient | null>(null);
   const [form, setForm] = useState<any>(emptyForm);
+  const { t } = useI18n();
 
   const load = () =>
     api
@@ -72,26 +74,26 @@ export default function AdminIngredientsPage() {
     <>
       <TopNav />
       <RequireRole role="ADMIN">
-        <AdminShell title="Ingredients">
+        <AdminShell title={t('admin.nav.ingredients')}>
           <Card>
             <div className="mb-3 flex justify-between">
-              <p className="text-sm text-muted">Manage base inventory and stock levels.</p>
-              <Button onClick={openCreate}>Add Ingredient</Button>
+              <p className="text-sm text-muted">{t('admin.ingredients.help')}</p>
+              <Button onClick={openCreate}>{t('admin.ingredients.add')}</Button>
             </div>
             {loading ? (
-              <p className="text-sm text-muted">Loading ingredients...</p>
+              <p className="text-sm text-muted">{t('admin.ingredients.loading')}</p>
             ) : error ? (
               <p className="text-sm text-red-600">{error}</p>
             ) : items.length === 0 ? (
-              <p className="text-sm text-muted">No ingredients yet.</p>
+              <p className="text-sm text-muted">{t('admin.ingredients.empty')}</p>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Unit</TableHead>
-                    <TableHead>Stock</TableHead>
-                    <TableHead>Reorder Threshold</TableHead>
+                    <TableHead>{t('admin.ingredients.name')}</TableHead>
+                    <TableHead>{t('admin.ingredients.unit')}</TableHead>
+                    <TableHead>{t('admin.ingredients.stock')}</TableHead>
+                    <TableHead>{t('admin.ingredients.reorder')}</TableHead>
                     <TableHead></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -104,10 +106,10 @@ export default function AdminIngredientsPage() {
                       <TableCell>{item.reorderLevel}</TableCell>
                       <TableCell className="text-right">
                         <button className="mr-3 text-sm underline" onClick={() => openEdit(item)}>
-                          Edit
+                          {t('common.edit')}
                         </button>
                         <button className="text-sm text-red-600 underline" onClick={() => remove(item.id)}>
-                          Delete
+                          {t('common.delete')}
                         </button>
                       </TableCell>
                     </TableRow>
@@ -120,29 +122,29 @@ export default function AdminIngredientsPage() {
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>{editing ? 'Edit ingredient' : 'Add ingredient'}</DialogTitle>
+                <DialogTitle>{editing ? t('admin.ingredients.edit') : t('admin.ingredients.create')}</DialogTitle>
               </DialogHeader>
               <form onSubmit={submit} className="space-y-3">
-                <FormField label="Ingredient Name">
+                <FormField label={t('admin.ingredients.name')}>
                   <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
                 </FormField>
-                <FormField label="Unit">
+                <FormField label={t('admin.ingredients.unit')}>
                   <Select value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })}>
                     <option value="g">g</option>
                     <option value="ml">ml</option>
                     <option value="pcs">pcs</option>
                   </Select>
                 </FormField>
-                <FormField label="Current Stock">
+                <FormField label={t('admin.ingredients.currentStock')}>
                   <Input type="number" value={form.currentStock} onChange={e => setForm({ ...form, currentStock: e.target.value })} required />
                 </FormField>
-                <FormField label="Reorder Threshold (low-stock alert)">
+                <FormField label={t('admin.ingredients.reorderLevel')}>
                   <Input type="number" value={form.reorderLevel} onChange={e => setForm({ ...form, reorderLevel: e.target.value })} required />
                 </FormField>
-                <FormField label="Cost Tracking Method">
+                <FormField label={t('admin.ingredients.costTracking')}>
                   <Input value={form.costTrackingMethod} onChange={e => setForm({ ...form, costTrackingMethod: e.target.value })} />
                 </FormField>
-                <Button className="w-full">Save</Button>
+                <Button className="w-full">{t('common.save')}</Button>
               </form>
             </DialogContent>
           </Dialog>

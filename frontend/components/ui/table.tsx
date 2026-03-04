@@ -13,7 +13,11 @@ export function TableBody(props: React.HTMLAttributes<HTMLTableSectionElement>) 
   return <tbody {...props} />;
 }
 
-export function TableRow({ className, ...props }: React.HTMLAttributes<HTMLTableRowElement>) {
+type TableRowProps = React.HTMLAttributes<HTMLTableRowElement> & {
+  key?: React.Key;
+};
+
+export function TableRow({ className, ...props }: TableRowProps) {
   return <tr className={cn('border-b border-border', className)} {...props} />;
 }
 

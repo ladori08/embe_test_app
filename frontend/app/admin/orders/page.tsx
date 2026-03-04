@@ -7,15 +7,16 @@ import { AdminShell } from '@/components/admin-shell';
 import { Card } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select } from '@/components/ui/select';
+import { useI18n } from '@/components/language-context';
 import { api } from '@/lib/api';
 import { Order, OrderStatus } from '@/lib/types';
-import { money } from '@/lib/utils';
 
 const statuses: OrderStatus[] = ['NEW', 'CONFIRMED', 'PAID', 'CANCELLED', 'COMPLETED'];
 
 export default function AdminOrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [error, setError] = useState('');
+  const { t, money } = useI18n();
 
   const load = () =>
     api
@@ -36,20 +37,20 @@ export default function AdminOrdersPage() {
     <>
       <TopNav />
       <RequireRole role="ADMIN">
-        <AdminShell title="Orders">
+        <AdminShell title={t('admin.nav.orders')}>
           <Card>
             {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
             {orders.length === 0 ? (
-              <p className="text-sm text-muted">No orders available.</p>
+              <p className="text-sm text-muted">{t('admin.orders.empty')}</p>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Order</TableHead>
-                    <TableHead>User</TableHead>
-                    <TableHead>Total</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Created</TableHead>
+                    <TableHead>{t('admin.orders.order')}</TableHead>
+                    <TableHead>{t('admin.orders.user')}</TableHead>
+                    <TableHead>{t('admin.orders.total')}</TableHead>
+                    <TableHead>{t('admin.orders.status')}</TableHead>
+                    <TableHead>{t('admin.orders.created')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -62,7 +63,7 @@ export default function AdminOrdersPage() {
                         <Select value={order.status} onChange={e => updateStatus(order.id, e.target.value as OrderStatus)}>
                           {statuses.map(status => (
                             <option value={status} key={status}>
-                              {status}
+                              {t(`status.${status}`)}
                             </option>
                           ))}
                         </Select>

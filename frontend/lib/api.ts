@@ -1,4 +1,4 @@
-import { DashboardData, Ingredient, Order, Product, Recipe, User } from '@/lib/types';
+import { DashboardData, Ingredient, Order, Product, ProductCategory, Recipe, User } from '@/lib/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
@@ -12,13 +12,13 @@ class ApiError extends Error {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const headers = new Headers(options.headers);
+  headers.set('Content-Type', 'application/json');
+
   const response = await fetch(`${API_URL}${path}`, {
+    ...options,
     credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options.headers || {})
-    },
-    ...options
+    headers
   });
 
   if (response.status === 204) {
@@ -60,6 +60,14 @@ export const api = {
   deleteIngredient: (id: string) => request<void>(`/api/admin/ingredients/${id}`, { method: 'DELETE' }),
 
   listProductsAdmin: () => request<Product[]>('/api/admin/products'),
+  listProductCategories: () => request<ProductCategory[]>('/api/admin/product-categories'),
+  createProductCategory: (name: string) =>
+    request<ProductCategory>('/api/admin/product-categories', { method: 'POST', body: JSON.stringify({ name }) }),
+  updateProductCategory: (id: string, name: string) =>
+    request<ProductCategory>(`/api/admin/product-categories/${id}`, { method: 'PUT', body: JSON.stringify({ name }) }),
+  deleteProductCategory: (id: string) => request<void>(`/api/admin/product-categories/${id}`, { method: 'DELETE' }),
+  nextProductSku: (category: string) =>
+    request<{ sku: string }>(`/api/admin/products/next-sku?category=${encodeURIComponent(category)}`),
   createProduct: (payload: Partial<Product>) => request<Product>('/api/admin/products', { method: 'POST', body: JSON.stringify(payload) }),
   updateProduct: (id: string, payload: Partial<Product>) => request<Product>(`/api/admin/products/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
   deleteProduct: (id: string) => request<void>(`/api/admin/products/${id}`, { method: 'DELETE' }),

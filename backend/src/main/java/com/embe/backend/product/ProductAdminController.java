@@ -28,6 +28,11 @@ public class ProductAdminController {
         return productService.getById(id);
     }
 
+    @GetMapping("/next-sku")
+    public SkuSuggestionResponse nextSku(@RequestParam String category) {
+        return new SkuSuggestionResponse(productService.previewNextSku(category));
+    }
+
     @PostMapping
     public ProductResponse create(@Valid @RequestBody ProductRequest request) {
         return productService.create(request);

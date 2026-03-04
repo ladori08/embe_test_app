@@ -9,11 +9,12 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
-import { money } from '@/lib/utils';
+import { useI18n } from '@/components/language-context';
 
 export default function CheckoutPage() {
   const { items, subtotal, clear } = useCart();
   const { user, loading } = useAuth();
+  const { t, money } = useI18n();
   const router = useRouter();
   const [tax, setTax] = useState(0);
   const [message, setMessage] = useState('');
@@ -36,30 +37,30 @@ export default function CheckoutPage() {
         items: items.map(item => ({ productId: item.productId, qty: item.qty }))
       });
       clear();
-      setMessage('Order placed successfully. You can track it in your account/order list.');
+      setMessage(t('checkout.success'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Checkout failed');
+      setError(err instanceof Error ? err.message : t('checkout.failed'));
     } finally {
       setSubmitting(false);
     }
   };
 
   if (loading || !user) {
-    return (
-      <>
-        <TopNav />
-        <main className="mx-auto max-w-3xl px-4 py-8 text-sm text-muted">Loading checkout...</main>
-      </>
-    );
+      return (
+        <>
+          <TopNav />
+          <main className="mx-auto max-w-3xl px-4 py-8 text-sm text-muted">{t('checkout.loading')}</main>
+        </>
+      );
   }
 
   return (
     <>
       <TopNav />
       <main className="mx-auto max-w-3xl px-4 py-8">
-        <h1 className="mb-4 text-3xl font-script">Checkout</h1>
+        <h1 className="mb-4 text-3xl font-script">{t('checkout.title')}</h1>
         {items.length === 0 ? (
-          <Card>Your cart is empty.</Card>
+          <Card>{t('checkout.empty')}</Card>
         ) : (
           <Card className="space-y-4">
             {items.map(item => (
@@ -69,21 +70,21 @@ export default function CheckoutPage() {
               </div>
             ))}
             <div className="border-t border-border pt-3">
-              <label className="text-sm text-muted">Tax</label>
+              <label className="text-sm text-muted">{t('checkout.tax')}</label>
               <Input type="number" value={tax} onChange={e => setTax(Number(e.target.value))} />
             </div>
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted">Subtotal</span>
+              <span className="text-muted">{t('common.subtotal')}</span>
               <span>{money(subtotal)}</span>
             </div>
             <div className="flex items-center justify-between text-base font-semibold">
-              <span>Total</span>
+              <span>{t('common.total')}</span>
               <span>{money(subtotal + tax)}</span>
             </div>
             {error && <p className="text-sm text-red-600">{error}</p>}
             {message && <p className="text-sm text-green-700">{message}</p>}
             <Button disabled={submitting} onClick={onPlaceOrder} className="w-full">
-              {submitting ? 'Placing order...' : 'Place Order'}
+              {submitting ? t('checkout.placingOrder') : t('checkout.placeOrder')}
             </Button>
           </Card>
         )}
