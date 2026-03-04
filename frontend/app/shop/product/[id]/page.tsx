@@ -18,7 +18,7 @@ export default function ProductDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const { addItem } = useCart();
-  const { t, money } = useI18n();
+  const { t, moneyCompact } = useI18n();
 
   useEffect(() => {
     if (!params.id) return;
@@ -43,7 +43,7 @@ export default function ProductDetailPage() {
             <h1 className="font-script text-5xl">{product.name}</h1>
             <p className="mt-2 text-muted">{product.category}</p>
             <div className="mt-4 flex items-center gap-3">
-              <span className="text-2xl font-semibold">{money(product.price)}</span>
+              <span className="text-2xl font-semibold">{moneyCompact(product.price)}</span>
               <Badge>{t('product.stock', { stock: product.currentStock })}</Badge>
             </div>
             <p className="mt-3 text-sm text-muted">{t('product.description')}</p>

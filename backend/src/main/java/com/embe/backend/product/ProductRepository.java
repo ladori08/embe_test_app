@@ -8,4 +8,7 @@ import java.util.Optional;
 public interface ProductRepository extends MongoRepository<Product, String> {
     Optional<Product> findBySkuIgnoreCase(String sku);
     List<Product> findByActiveTrueOrderByCreatedAtDesc();
+    List<Product> findBySkuStartingWith(String prefix);
+    List<Product> findByCategoryIgnoreCase(String category);
+    long countByCategoryIgnoreCase(String category);
 }

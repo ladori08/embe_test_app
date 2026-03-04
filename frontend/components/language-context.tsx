@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
+  formatCompactMoneyByLocale,
   formatMoneyByLocale,
   getInitialLocale,
   isLocale,
@@ -16,6 +17,7 @@ interface LanguageContextValue {
   setLocale: (locale: Locale) => void;
   t: (key: string, params?: TranslationParams) => string;
   money: (value: number) => string;
+  moneyCompact: (value: number) => string;
 }
 
 const LanguageContext = createContext<LanguageContextValue | null>(null);
@@ -42,15 +44,17 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   );
 
   const money = useCallback((value: number) => formatMoneyByLocale(locale, value), [locale]);
+  const moneyCompact = useCallback((value: number) => formatCompactMoneyByLocale(locale, value), [locale]);
 
   const value = useMemo(
     () => ({
       locale,
       setLocale,
       t,
-      money
+      money,
+      moneyCompact
     }),
-    [locale, t, money]
+    [locale, t, money, moneyCompact]
   );
 
   return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;

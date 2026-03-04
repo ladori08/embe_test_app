@@ -87,10 +87,18 @@ const dictionaries: Record<Locale, Record<string, string>> = {
     'admin.ingredients.costTracking': 'Cost tracking method',
     'admin.products.help': 'Manage products shown in storefront.',
     'admin.products.add': 'Add Product',
+    'admin.products.manageCategories': 'Manage Categories',
+    'admin.products.filterByCategory': 'Filter by category',
+    'admin.products.filterAllCategories': 'All categories',
+    'admin.products.filterEmpty': 'No products match the selected category.',
     'admin.products.loading': 'Loading products...',
     'admin.products.empty': 'No products yet.',
     'admin.products.name': 'Name',
     'admin.products.sku': 'SKU',
+    'admin.products.skuLabel': 'SKU (Product Code)',
+    'admin.products.skuHelp': 'Auto-generated from category. Format: XXXXX-0000Y. Read-only.',
+    'admin.products.skuRequired': 'Choose a category so SKU can be generated.',
+    'admin.products.categoryRequired': 'Please choose a category.',
     'admin.products.price': 'Price',
     'admin.products.stock': 'Stock',
     'admin.products.status': 'Status',
@@ -99,6 +107,23 @@ const dictionaries: Record<Locale, Record<string, string>> = {
     'admin.products.edit': 'Edit product',
     'admin.products.create': 'Add product',
     'admin.products.category': 'Category',
+    'admin.products.selectCategory': 'Select a category',
+    'admin.products.quickCreateCategory': 'Create New',
+    'admin.products.categoriesTitle': 'Product Categories',
+    'admin.products.categoriesHelp': 'Add, edit, or remove categories used by products.',
+    'admin.products.categoriesLoading': 'Loading categories...',
+    'admin.products.categoriesEmpty': 'No categories yet.',
+    'admin.products.categoryName': 'Category name',
+    'admin.products.categorySku': 'Category SKU',
+    'admin.products.createCategory': 'Add Category',
+    'admin.products.editCategory': 'Edit Category',
+    'admin.products.updateCategory': 'Update Category',
+    'admin.products.cancelCategoryEdit': 'Cancel Edit',
+    'admin.products.categoryNameRequired': 'Category name cannot be empty.',
+    'admin.products.confirmDeleteCategory': 'Delete this category?',
+    'admin.products.legacyCategory': 'Legacy category (not in manager)',
+    'admin.products.regenerateSku': 'Regenerate SKU',
+    'admin.products.regeneratePending': 'New SKU will be applied when you save.',
     'admin.products.cost': 'Cost',
     'admin.products.currentStock': 'Current stock',
     'admin.products.inactive': 'Inactive',
@@ -163,7 +188,7 @@ const dictionaries: Record<Locale, Record<string, string>> = {
     'login.signIn': 'Đăng nhập',
     'login.signedInAs': 'Bạn đang đăng nhập với {email}',
     'shop.heroTag': 'Nướng mới mỗi ngày',
-    'shop.heroTitle': 'Bánh nóng và cà phê, làm bằng sự chăm chút.',
+    'shop.heroTitle': 'Treat you like embé',
     'shop.heroDesc': 'Embe kết hợp bánh thủ công và cà phê ấm cúng. Đặt trước online và nhận nhanh tại cửa hàng.',
     'shop.cartCta': 'Giỏ hàng ({count})',
     'shop.quickCheckout': 'Thanh toán nhanh',
@@ -223,10 +248,18 @@ const dictionaries: Record<Locale, Record<string, string>> = {
     'admin.ingredients.costTracking': 'Cách tính giá vốn',
     'admin.products.help': 'Quản lý sản phẩm hiển thị trên cửa hàng.',
     'admin.products.add': 'Thêm sản phẩm',
+    'admin.products.manageCategories': 'Quản lý danh mục',
+    'admin.products.filterByCategory': 'Lọc theo danh mục',
+    'admin.products.filterAllCategories': 'Tất cả danh mục',
+    'admin.products.filterEmpty': 'Không có sản phẩm phù hợp với danh mục đã chọn.',
     'admin.products.loading': 'Đang tải sản phẩm...',
     'admin.products.empty': 'Chưa có sản phẩm.',
     'admin.products.name': 'Tên',
     'admin.products.sku': 'SKU',
+    'admin.products.skuLabel': 'SKU (Mã sản phẩm)',
+    'admin.products.skuHelp': 'Tự tạo theo Danh mục, định dạng XXXXX-0000Y và không chỉnh tay.',
+    'admin.products.skuRequired': 'Vui lòng chọn Danh mục để hệ thống tạo SKU.',
+    'admin.products.categoryRequired': 'Vui lòng chọn Danh mục.',
     'admin.products.price': 'Giá',
     'admin.products.stock': 'Tồn',
     'admin.products.status': 'Trạng thái',
@@ -235,6 +268,23 @@ const dictionaries: Record<Locale, Record<string, string>> = {
     'admin.products.edit': 'Sửa sản phẩm',
     'admin.products.create': 'Thêm sản phẩm',
     'admin.products.category': 'Danh mục',
+    'admin.products.selectCategory': 'Chọn danh mục',
+    'admin.products.quickCreateCategory': 'Tạo mới',
+    'admin.products.categoriesTitle': 'Danh mục sản phẩm',
+    'admin.products.categoriesHelp': 'Thêm, sửa, xóa danh mục dùng cho sản phẩm.',
+    'admin.products.categoriesLoading': 'Đang tải danh mục...',
+    'admin.products.categoriesEmpty': 'Chưa có danh mục.',
+    'admin.products.categoryName': 'Tên danh mục',
+    'admin.products.categorySku': 'SKU danh mục',
+    'admin.products.createCategory': 'Thêm danh mục',
+    'admin.products.editCategory': 'Sửa danh mục',
+    'admin.products.updateCategory': 'Cập nhật danh mục',
+    'admin.products.cancelCategoryEdit': 'Hủy sửa',
+    'admin.products.categoryNameRequired': 'Tên danh mục không được để trống.',
+    'admin.products.confirmDeleteCategory': 'Xóa danh mục này?',
+    'admin.products.legacyCategory': 'Danh mục cũ (chưa có trong quản lý)',
+    'admin.products.regenerateSku': 'Tạo lại SKU',
+    'admin.products.regeneratePending': 'SKU mới sẽ được áp dụng khi bạn bấm Lưu.',
     'admin.products.cost': 'Giá vốn',
     'admin.products.currentStock': 'Tồn hiện tại',
     'admin.products.inactive': 'Ngừng bán',
@@ -295,7 +345,27 @@ export function translate(locale: Locale, key: string, params: TranslationParams
   return template.replace(/\{(\w+)}/g, (_, paramKey: string) => String(params[paramKey] ?? `{${paramKey}}`));
 }
 
-export function formatMoneyByLocale(locale: Locale, value: number) {
-  const numberLocale = locale === 'vi' ? 'vi-VN' : 'en-US';
-  return new Intl.NumberFormat(numberLocale, { style: 'currency', currency: 'USD' }).format(value || 0);
+function formatVndNumber(value: number) {
+  const safeValue = Number.isFinite(value) ? value : 0;
+  return new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(safeValue);
+}
+
+export function formatMoneyByLocale(_locale: Locale, value: number) {
+  return formatVndNumber(value);
+}
+
+export function formatCompactMoneyByLocale(_locale: Locale, value: number) {
+  const safeValue = Number.isFinite(value) ? value : 0;
+  const absoluteValue = Math.abs(safeValue);
+
+  if (absoluteValue < 1000) {
+    return formatVndNumber(safeValue);
+  }
+
+  const truncatedThousands = Math.trunc((safeValue / 1000) * 10) / 10;
+  const numberPart = Number.isInteger(truncatedThousands)
+    ? String(truncatedThousands)
+    : truncatedThousands.toFixed(1);
+
+  return `${numberPart}k`;
 }

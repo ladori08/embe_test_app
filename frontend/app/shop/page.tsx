@@ -20,7 +20,7 @@ export default function ShopPage() {
   const [error, setError] = useState('');
   const [cartOpen, setCartOpen] = useState(false);
   const { addItem, items } = useCart();
-  const { t, money } = useI18n();
+  const { t, moneyCompact } = useI18n();
 
   useEffect(() => {
     api
@@ -69,7 +69,7 @@ export default function ShopPage() {
                 <CardDescription>{product.category}</CardDescription>
                 <CardContent className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-lg font-semibold">{money(product.price)}</span>
+                    <span className="text-lg font-semibold">{moneyCompact(product.price)}</span>
                     <Badge>{t('shop.stock', { stock: product.currentStock })}</Badge>
                   </div>
                   <div className="flex gap-2">

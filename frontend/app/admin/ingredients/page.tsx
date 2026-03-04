@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { FormField } from '@/components/ui/form';
 import { Select } from '@/components/ui/select';
 import { useI18n } from '@/components/language-context';
 import { api } from '@/lib/api';
@@ -124,15 +125,25 @@ export default function AdminIngredientsPage() {
                 <DialogTitle>{editing ? t('admin.ingredients.edit') : t('admin.ingredients.create')}</DialogTitle>
               </DialogHeader>
               <form onSubmit={submit} className="space-y-3">
-                <Input placeholder={t('admin.ingredients.name')} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
-                <Select value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })}>
-                  <option value="g">g</option>
-                  <option value="ml">ml</option>
-                  <option value="pcs">pcs</option>
-                </Select>
-                <Input type="number" placeholder={t('admin.ingredients.currentStock')} value={form.currentStock} onChange={e => setForm({ ...form, currentStock: e.target.value })} required />
-                <Input type="number" placeholder={t('admin.ingredients.reorderLevel')} value={form.reorderLevel} onChange={e => setForm({ ...form, reorderLevel: e.target.value })} required />
-                <Input placeholder={t('admin.ingredients.costTracking')} value={form.costTrackingMethod} onChange={e => setForm({ ...form, costTrackingMethod: e.target.value })} />
+                <FormField label={t('admin.ingredients.name')}>
+                  <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
+                </FormField>
+                <FormField label={t('admin.ingredients.unit')}>
+                  <Select value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })}>
+                    <option value="g">g</option>
+                    <option value="ml">ml</option>
+                    <option value="pcs">pcs</option>
+                  </Select>
+                </FormField>
+                <FormField label={t('admin.ingredients.currentStock')}>
+                  <Input type="number" value={form.currentStock} onChange={e => setForm({ ...form, currentStock: e.target.value })} required />
+                </FormField>
+                <FormField label={t('admin.ingredients.reorderLevel')}>
+                  <Input type="number" value={form.reorderLevel} onChange={e => setForm({ ...form, reorderLevel: e.target.value })} required />
+                </FormField>
+                <FormField label={t('admin.ingredients.costTracking')}>
+                  <Input value={form.costTrackingMethod} onChange={e => setForm({ ...form, costTrackingMethod: e.target.value })} />
+                </FormField>
                 <Button className="w-full">{t('common.save')}</Button>
               </form>
             </DialogContent>
