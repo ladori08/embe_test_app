@@ -7,4 +7,5 @@ import java.util.Optional;
 public interface RecipeRepository extends MongoRepository<Recipe, String> {
     boolean existsByItemsIngredientId(String ingredientId);
     Optional<Recipe> findByProductId(String productId);
+    void deleteByProductId(String productId);
 }

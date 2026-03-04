@@ -2,6 +2,7 @@ package com.embe.backend.product;
 
 import com.embe.backend.category.ProductCategoryService;
 import com.embe.backend.common.ApiException;
+import com.embe.backend.recipe.RecipeRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -24,15 +25,18 @@ public class ProductService {
     private final ProductRepository productRepository;
     private final ProductStockLogRepository productStockLogRepository;
     private final ProductCategoryService productCategoryService;
+    private final RecipeRepository recipeRepository;
 
     public ProductService(
             ProductRepository productRepository,
             ProductStockLogRepository productStockLogRepository,
-            ProductCategoryService productCategoryService
+            ProductCategoryService productCategoryService,
+            RecipeRepository recipeRepository
     ) {
         this.productRepository = productRepository;
         this.productStockLogRepository = productStockLogRepository;
         this.productCategoryService = productCategoryService;
+        this.recipeRepository = recipeRepository;
     }
 
     public List<ProductResponse> listAll() {
@@ -110,6 +114,7 @@ public class ProductService {
 
     public void delete(String id) {
         Product product = getEntity(id);
+        recipeRepository.deleteByProductId(product.getId());
         productRepository.delete(product);
     }
 
