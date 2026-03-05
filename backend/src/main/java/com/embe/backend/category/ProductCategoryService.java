@@ -1,5 +1,8 @@
 package com.embe.backend.category;
 
+import com.embe.backend.audit.AuditAction;
+import com.embe.backend.audit.AuditLogService;
+import com.embe.backend.audit.AuditModule;
 import com.embe.backend.common.ApiException;
 import com.embe.backend.product.Product;
 import com.embe.backend.product.ProductRepository;
@@ -26,10 +29,16 @@ public class ProductCategoryService {
 
     private final ProductCategoryRepository categoryRepository;
     private final ProductRepository productRepository;
+    private final AuditLogService auditLogService;
 
-    public ProductCategoryService(ProductCategoryRepository categoryRepository, ProductRepository productRepository) {
+    public ProductCategoryService(
+            ProductCategoryRepository categoryRepository,
+            ProductRepository productRepository,
+            AuditLogService auditLogService
+    ) {
         this.categoryRepository = categoryRepository;
         this.productRepository = productRepository;
+        this.auditLogService = auditLogService;
     }
 
     public List<ProductCategoryResponse> list() {
@@ -54,11 +63,22 @@ public class ProductCategoryService {
         category.setUpdatedAt(now);
 
         ProductCategory saved = saveWithGeneratedSku(category, buildCategoryPrefix(normalizedName));
-        return toResponse(saved);
+        ProductCategoryResponse response = toResponse(saved);
+        auditLogService.record(
+                AuditModule.CATEGORY,
+                AuditAction.CREATE,
+                "Created category " + response.name(),
+                response.id(),
+                null,
+                response,
+                java.util.Map.of("sku", response.sku())
+        );
+        return response;
     }
 
     public ProductCategoryResponse update(String id, ProductCategoryRequest request) {
         ProductCategory category = getEntity(id);
+        ProductCategoryResponse before = toResponse(category);
         String oldName = category.getName();
         String oldSku = category.getSku();
 
@@ -86,16 +106,37 @@ public class ProductCategoryService {
             renameCategoryForProducts(oldName, normalizedName);
         }
 
-        return toResponse(saved);
+        ProductCategoryResponse after = toResponse(saved);
+        boolean skuChanged = oldSku == null || !oldSku.equalsIgnoreCase(after.sku());
+        auditLogService.record(
+                AuditModule.CATEGORY,
+                AuditAction.UPDATE,
+                "Updated category " + after.name(),
+                after.id(),
+                before,
+                after,
+                java.util.Map.of("skuChanged", skuChanged)
+        );
+        return after;
     }
 
     public void delete(String id) {
         ProductCategory category = getEntity(id);
+        ProductCategoryResponse before = toResponse(category);
         long linkedProducts = productRepository.countByCategoryIgnoreCase(category.getName());
         if (linkedProducts > 0) {
             throw new ApiException(HttpStatus.CONFLICT, "Category is used by existing products and cannot be deleted");
         }
         categoryRepository.delete(category);
+        auditLogService.record(
+                AuditModule.CATEGORY,
+                AuditAction.DELETE,
+                "Deleted category " + before.name(),
+                before.id(),
+                before,
+                null,
+                java.util.Map.of("sku", before.sku())
+        );
     }
 
     public String requireExistingCategoryName(String category) {

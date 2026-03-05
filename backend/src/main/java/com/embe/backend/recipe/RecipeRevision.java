@@ -10,15 +10,19 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 
-@Document("recipes")
-public class Recipe {
+@Document("recipe_revisions")
+public class RecipeRevision {
 
     @Id
     private String id;
 
-    @Indexed(unique = true)
+    @Indexed
+    private String recipeId;
+
+    @Indexed
     private String productId;
 
+    @Indexed
     private Integer version;
 
     @Field(targetType = FieldType.DECIMAL128)
@@ -26,9 +30,11 @@ public class Recipe {
 
     private List<RecipeItem> items;
 
-    private Instant createdAt;
+    private Instant changedAt;
 
-    private Instant updatedAt;
+    private String changedBy;
+
+    private String changeType;
 
     public String getId() {
         return id;
@@ -36,6 +42,14 @@ public class Recipe {
 
     public void setId(String id) {
         this.id = id;
+    }
+
+    public String getRecipeId() {
+        return recipeId;
+    }
+
+    public void setRecipeId(String recipeId) {
+        this.recipeId = recipeId;
     }
 
     public String getProductId() {
@@ -70,19 +84,27 @@ public class Recipe {
         this.items = items;
     }
 
-    public Instant getCreatedAt() {
-        return createdAt;
+    public Instant getChangedAt() {
+        return changedAt;
     }
 
-    public void setCreatedAt(Instant createdAt) {
-        this.createdAt = createdAt;
+    public void setChangedAt(Instant changedAt) {
+        this.changedAt = changedAt;
     }
 
-    public Instant getUpdatedAt() {
-        return updatedAt;
+    public String getChangedBy() {
+        return changedBy;
     }
 
-    public void setUpdatedAt(Instant updatedAt) {
-        this.updatedAt = updatedAt;
+    public void setChangedBy(String changedBy) {
+        this.changedBy = changedBy;
+    }
+
+    public String getChangeType() {
+        return changeType;
+    }
+
+    public void setChangeType(String changeType) {
+        this.changeType = changeType;
     }
 }

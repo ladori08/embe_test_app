@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/components/auth-context';
 import { useI18n } from '@/components/language-context';
+import { hasRole } from '@/lib/permissions';
 
 export function TopNav() {
   const { user, logout } = useAuth();
@@ -26,7 +27,7 @@ export function TopNav() {
           <Link href="/shop" className="px-3 py-2 text-sm text-muted hover:text-ink">
             {t('nav.shop')}
           </Link>
-          {user?.roles.includes('ADMIN') && (
+          {hasRole(user, 'ADMIN') && (
             <Link href="/admin/dashboard" className="px-3 py-2 text-sm text-muted hover:text-ink">
               {t('nav.admin')}
             </Link>

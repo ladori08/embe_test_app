@@ -8,6 +8,7 @@ public record RecipeResponse(
         String id,
         String productId,
         String productName,
+        Integer version,
         BigDecimal yieldQty,
         List<RecipeIngredientResponse> items,
         Instant createdAt,

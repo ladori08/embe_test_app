@@ -1,9 +1,13 @@
 package com.embe.backend.bake;
 
+import org.springframework.data.mongodb.core.mapping.Field;
+import org.springframework.data.mongodb.core.mapping.FieldType;
+
 import java.math.BigDecimal;
 
 public class BakeDeduction {
     private String ingredientId;
+    @Field(targetType = FieldType.DECIMAL128)
     private BigDecimal qty;
 
     public String getIngredientId() {
