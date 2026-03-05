@@ -34,3 +34,5 @@ backend/target/
 frontend/node_modules/
 frontend/.next/
 frontend/out/
+frontend/package-lock.json
+frontend/tsconfig.tsbuildinfo
