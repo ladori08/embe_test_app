@@ -88,6 +88,9 @@ const dictionaries: Record<Locale, Record<string, string>> = {
     'admin.products.help': 'Manage products shown in storefront.',
     'admin.products.add': 'Add Product',
     'admin.products.manageCategories': 'Manage Categories',
+    'admin.products.filterByCategory': 'Filter by category',
+    'admin.products.filterAllCategories': 'All categories',
+    'admin.products.filterEmpty': 'No products match the selected category.',
     'admin.products.loading': 'Loading products...',
     'admin.products.empty': 'No products yet.',
     'admin.products.name': 'Name',
@@ -136,12 +139,15 @@ const dictionaries: Record<Locale, Record<string, string>> = {
     'admin.recipes.qty': 'Qty',
     'admin.recipes.addLine': 'Add Ingredient Line',
     'admin.recipes.save': 'Save Recipe',
+    'admin.recipes.noProducts': 'No products available.',
+    'admin.recipes.noIngredients': 'No ingredients available.',
     'admin.production.help': 'Run bake jobs with transaction-safe stock mutation and idempotency key control.',
     'admin.production.yieldLabel': '{name} (yield {yieldQty})',
     'admin.production.batchFactor': 'Batch factor',
     'admin.production.run': 'Produce / Bake',
     'admin.production.success': 'Bake completed. Ingredient stock deducted and product stock increased.',
     'admin.production.failed': 'Failed to bake',
+    'admin.production.noRecipes': 'No recipes available.',
     'admin.production.history': 'Bake History',
     'admin.production.empty': 'No production records yet.',
     'admin.production.id': 'ID',
@@ -185,7 +191,7 @@ const dictionaries: Record<Locale, Record<string, string>> = {
     'login.signIn': 'Đăng nhập',
     'login.signedInAs': 'Bạn đang đăng nhập với {email}',
     'shop.heroTag': 'Nướng mới mỗi ngày',
-    'shop.heroTitle': 'Bánh nóng và cà phê, làm bằng sự chăm chút.',
+    'shop.heroTitle': 'Treat you like embé',
     'shop.heroDesc': 'Embe kết hợp bánh thủ công và cà phê ấm cúng. Đặt trước online và nhận nhanh tại cửa hàng.',
     'shop.cartCta': 'Giỏ hàng ({count})',
     'shop.quickCheckout': 'Thanh toán nhanh',
@@ -246,6 +252,9 @@ const dictionaries: Record<Locale, Record<string, string>> = {
     'admin.products.help': 'Quản lý sản phẩm hiển thị trên cửa hàng.',
     'admin.products.add': 'Thêm sản phẩm',
     'admin.products.manageCategories': 'Quản lý danh mục',
+    'admin.products.filterByCategory': 'Lọc theo danh mục',
+    'admin.products.filterAllCategories': 'Tất cả danh mục',
+    'admin.products.filterEmpty': 'Không có sản phẩm phù hợp với danh mục đã chọn.',
     'admin.products.loading': 'Đang tải sản phẩm...',
     'admin.products.empty': 'Chưa có sản phẩm.',
     'admin.products.name': 'Tên',
@@ -294,12 +303,15 @@ const dictionaries: Record<Locale, Record<string, string>> = {
     'admin.recipes.qty': 'Số lượng',
     'admin.recipes.addLine': 'Thêm dòng nguyên liệu',
     'admin.recipes.save': 'Lưu công thức',
+    'admin.recipes.noProducts': 'Chưa có sản phẩm để chọn.',
+    'admin.recipes.noIngredients': 'Chưa có nguyên liệu để chọn.',
     'admin.production.help': 'Chạy lệnh sản xuất với cập nhật tồn kho an toàn và idempotency key.',
     'admin.production.yieldLabel': '{name} (sản lượng {yieldQty})',
     'admin.production.batchFactor': 'Hệ số mẻ',
     'admin.production.run': 'Sản xuất / Nướng',
     'admin.production.success': 'Nướng thành công. Tồn nguyên liệu giảm và tồn sản phẩm tăng.',
     'admin.production.failed': 'Nướng thất bại',
+    'admin.production.noRecipes': 'Chưa có công thức để chọn.',
     'admin.production.history': 'Lịch sử sản xuất',
     'admin.production.empty': 'Chưa có bản ghi sản xuất.',
     'admin.production.id': 'ID',
@@ -339,7 +351,27 @@ export function translate(locale: Locale, key: string, params: TranslationParams
   return template.replace(/\{(\w+)}/g, (_, paramKey: string) => String(params[paramKey] ?? `{${paramKey}}`));
 }
 
-export function formatMoneyByLocale(locale: Locale, value: number) {
-  const numberLocale = locale === 'vi' ? 'vi-VN' : 'en-US';
-  return new Intl.NumberFormat(numberLocale, { style: 'currency', currency: 'USD' }).format(value || 0);
+function formatVndNumber(value: number) {
+  const safeValue = Number.isFinite(value) ? value : 0;
+  return new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(safeValue);
+}
+
+export function formatMoneyByLocale(_locale: Locale, value: number) {
+  return formatVndNumber(value);
+}
+
+export function formatCompactMoneyByLocale(_locale: Locale, value: number) {
+  const safeValue = Number.isFinite(value) ? value : 0;
+  const absoluteValue = Math.abs(safeValue);
+
+  if (absoluteValue < 1000) {
+    return formatVndNumber(safeValue);
+  }
+
+  const truncatedThousands = Math.trunc((safeValue / 1000) * 10) / 10;
+  const numberPart = Number.isInteger(truncatedThousands)
+    ? String(truncatedThousands)
+    : truncatedThousands.toFixed(1);
+
+  return `${numberPart}k`;
 }

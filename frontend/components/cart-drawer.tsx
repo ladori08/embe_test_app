@@ -8,7 +8,7 @@ import { useI18n } from '@/components/language-context';
 
 export function CartDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { items, subtotal, updateQty, removeItem } = useCart();
-  const { t, money } = useI18n();
+  const { t, moneyCompact } = useI18n();
   const router = useRouter();
 
   return (
@@ -24,7 +24,7 @@ export function CartDrawer({ open, onOpenChange }: { open: boolean; onOpenChange
               <div className="flex items-center justify-between">
                 <div>
                   <p className="font-semibold">{item.name}</p>
-                  <p className="text-sm text-muted">{money(item.price)}</p>
+                  <p className="text-sm text-muted">{moneyCompact(item.price)}</p>
                 </div>
                 <button className="text-xs text-muted underline" onClick={() => removeItem(item.productId)}>
                   {t('common.remove')}
@@ -45,7 +45,7 @@ export function CartDrawer({ open, onOpenChange }: { open: boolean; onOpenChange
         <div className="mt-6 border-t border-border pt-4">
           <div className="mb-3 flex justify-between text-sm">
             <span className="text-muted">{t('common.subtotal')}</span>
-            <span className="font-semibold">{money(subtotal)}</span>
+            <span className="font-semibold">{moneyCompact(subtotal)}</span>
           </div>
           <Button
             className="w-full"

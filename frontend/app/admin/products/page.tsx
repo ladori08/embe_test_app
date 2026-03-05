@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { TopNav } from '@/components/top-nav';
 import { RequireRole } from '@/components/require-role';
 import { AdminShell } from '@/components/admin-shell';
@@ -16,6 +16,7 @@ import { api } from '@/lib/api';
 import { Product, ProductCategory } from '@/lib/types';
 
 const emptyForm = { name: '', sku: '', category: '', price: 0, cost: 0, currentStock: 0, isActive: true, images: [] as string[], regenerateSku: false };
+const ALL_CATEGORIES_FILTER = '__ALL_CATEGORIES__';
 
 export default function AdminProductsPage() {
   const [items, setItems] = useState<Product[]>([]);
@@ -33,6 +34,7 @@ export default function AdminProductsPage() {
   const [categorySaving, setCategorySaving] = useState(false);
   const [categoryDeletingId, setCategoryDeletingId] = useState('');
   const [regeneratingSku, setRegeneratingSku] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState(ALL_CATEGORIES_FILTER);
   const { t, money } = useI18n();
 
   const loadProducts = async () => {
@@ -251,6 +253,18 @@ export default function AdminProductsPage() {
   };
 
   const categoryOptions = [...categories];
+  const categoryFilterOptions = useMemo(() => {
+    const names = new Set<string>();
+    items.forEach(item => {
+      const name = String(item.category || '').trim();
+      if (name) names.add(name);
+    });
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [items]);
+  const filteredItems = useMemo(() => {
+    if (categoryFilter === ALL_CATEGORIES_FILTER) return items;
+    return items.filter(item => String(item.category || '').trim().toLowerCase() === categoryFilter.toLowerCase());
+  }, [items, categoryFilter]);
   const selectedCategory = String(form.category || '').trim();
   const hasSelectedCategoryInList = selectedCategory
     ? categories.some(category => category.name.toLowerCase() === selectedCategory.toLowerCase())
@@ -264,7 +278,20 @@ export default function AdminProductsPage() {
           <Card>
             <div className="mb-3 flex flex-wrap justify-between gap-2">
               <p className="text-sm text-muted">{t('admin.products.help')}</p>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Select
+                  value={categoryFilter}
+                  onChange={e => setCategoryFilter(e.target.value)}
+                  className="min-w-[170px] sm:min-w-[220px]"
+                  aria-label={t('admin.products.filterByCategory')}
+                >
+                  <option value={ALL_CATEGORIES_FILTER}>{t('admin.products.filterAllCategories')}</option>
+                  {categoryFilterOptions.map(category => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </Select>
                 <Button variant="outline" onClick={openCategoryManager}>
                   {t('admin.products.manageCategories')}
                 </Button>
@@ -277,12 +304,15 @@ export default function AdminProductsPage() {
               <p className="text-sm text-red-600">{error}</p>
             ) : items.length === 0 ? (
               <p className="text-sm text-muted">{t('admin.products.empty')}</p>
+            ) : filteredItems.length === 0 ? (
+              <p className="text-sm text-muted">{t('admin.products.filterEmpty')}</p>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>{t('admin.products.name')}</TableHead>
                     <TableHead>{t('admin.products.sku')}</TableHead>
+                    <TableHead>{t('admin.products.category')}</TableHead>
                     <TableHead>{t('admin.products.price')}</TableHead>
                     <TableHead>{t('admin.products.stock')}</TableHead>
                     <TableHead>{t('admin.products.status')}</TableHead>
@@ -290,10 +320,11 @@ export default function AdminProductsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {items.map(item => (
+                  {filteredItems.map(item => (
                     <TableRow key={item.id}>
                       <TableCell>{item.name}</TableCell>
                       <TableCell>{item.sku}</TableCell>
+                      <TableCell>{item.category}</TableCell>
                       <TableCell>{money(item.price)}</TableCell>
                       <TableCell>{item.currentStock}</TableCell>
                       <TableCell>{item.isActive ? t('admin.products.active') : t('admin.products.hidden')}</TableCell>

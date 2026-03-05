@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/card';
 import { Select } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { FormField } from '@/components/ui/form';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useI18n } from '@/components/language-context';
 import { api } from '@/lib/api';
@@ -23,12 +24,39 @@ export default function AdminProductionPage() {
   const { t } = useI18n();
 
   const load = async () => {
-    const [recipeList, bakeList] = await Promise.all([api.listRecipes(), api.listBakes() as Promise<BakeRecord[]>]);
-    setRecipes(recipeList);
-    setBakes(bakeList);
-    if (!recipeId && recipeList.length > 0) {
-      setRecipeId(recipeList[0].id);
+    const [recipeResult, bakeResult] = await Promise.allSettled([
+      api.listRecipes(),
+      api.listBakes() as Promise<BakeRecord[]>
+    ]);
+
+    const loadErrors: string[] = [];
+
+    if (recipeResult.status === 'fulfilled') {
+      const recipeList = recipeResult.value;
+      setRecipes(recipeList);
+      setRecipeId(prev => {
+        if (recipeList.length === 0) {
+          return '';
+        }
+        if (prev && recipeList.some(recipe => recipe.id === prev)) {
+          return prev;
+        }
+        return recipeList[0].id;
+      });
+    } else {
+      setRecipes([]);
+      setRecipeId('');
+      loadErrors.push(recipeResult.reason instanceof Error ? recipeResult.reason.message : t('admin.production.failed'));
     }
+
+    if (bakeResult.status === 'fulfilled') {
+      setBakes(bakeResult.value);
+    } else {
+      setBakes([]);
+      loadErrors.push(bakeResult.reason instanceof Error ? bakeResult.reason.message : t('admin.production.failed'));
+    }
+
+    setError(loadErrors.join(' | '));
   };
 
   useEffect(() => {
@@ -38,6 +66,10 @@ export default function AdminProductionPage() {
   const produce = async () => {
     setError('');
     setMessage('');
+    if (!recipeId) {
+      setError(t('admin.production.noRecipes'));
+      return;
+    }
     try {
       const key = `bake-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       await api.produceBake({ recipeId, batchFactor: Number(batchFactor), idempotencyKey: key });
@@ -55,15 +87,22 @@ export default function AdminProductionPage() {
         <AdminShell title={t('admin.nav.production')}>
           <Card className="space-y-3">
             <p className="text-sm text-muted">{t('admin.production.help')}</p>
-            <Select value={recipeId} onChange={e => setRecipeId(e.target.value)}>
-              {recipes.map(recipe => (
-                <option key={recipe.id} value={recipe.id}>
-                  {t('admin.production.yieldLabel', { name: recipe.productName, yieldQty: recipe.yieldQty })}
-                </option>
-              ))}
-            </Select>
-            <Input type="number" value={batchFactor} onChange={e => setBatchFactor(Number(e.target.value))} placeholder={t('admin.production.batchFactor')} />
-            <Button onClick={produce}>{t('admin.production.run')}</Button>
+            <FormField label={t('admin.production.recipe')}>
+              <Select value={recipeId} onChange={e => setRecipeId(e.target.value)} disabled={recipes.length === 0}>
+                {recipes.length === 0 ? <option value="">{t('admin.production.noRecipes')}</option> : null}
+                {recipes.map(recipe => (
+                  <option key={recipe.id} value={recipe.id}>
+                    {t('admin.production.yieldLabel', { name: recipe.productName, yieldQty: recipe.yieldQty })}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+            <FormField label={t('admin.production.batchFactor')}>
+              <Input type="number" value={batchFactor} onChange={e => setBatchFactor(Number(e.target.value))} placeholder={t('admin.production.batchFactor')} />
+            </FormField>
+            <Button onClick={produce} disabled={!recipeId}>
+              {t('admin.production.run')}
+            </Button>
             {error && <p className="text-sm text-red-600">{error}</p>}
             {message && <p className="text-sm text-green-700">{message}</p>}
           </Card>

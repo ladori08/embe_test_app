@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
+import { FormField } from '@/components/ui/form';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useI18n } from '@/components/language-context';
@@ -29,19 +30,47 @@ export default function AdminRecipesPage() {
   const productName = useMemo(() => new Map(products.map(p => [p.id, p.name])), [products]);
 
   const load = async () => {
-    try {
-      const [recipeList, productList, ingredientList] = await Promise.all([
-        api.listRecipes(),
-        api.listProductsAdmin(),
-        api.listIngredients()
-      ]);
-      setRecipes(recipeList);
-      setProducts(productList);
-      setIngredients(ingredientList);
-      if (!productId && productList.length > 0) setProductId(productList[0].id);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t('admin.recipes.failed'));
+    const [recipeResult, productResult, ingredientResult] = await Promise.allSettled([
+      api.listRecipes(),
+      api.listProductsAdmin(),
+      api.listIngredients()
+    ]);
+
+    const loadErrors: string[] = [];
+
+    if (recipeResult.status === 'fulfilled') {
+      setRecipes(recipeResult.value);
+    } else {
+      setRecipes([]);
+      loadErrors.push(recipeResult.reason instanceof Error ? recipeResult.reason.message : t('admin.recipes.failed'));
     }
+
+    if (productResult.status === 'fulfilled') {
+      const productList = productResult.value;
+      setProducts(productList);
+      setProductId(prev => {
+        if (productList.length === 0) {
+          return '';
+        }
+        if (prev && productList.some(product => product.id === prev)) {
+          return prev;
+        }
+        return productList[0].id;
+      });
+    } else {
+      setProducts([]);
+      setProductId('');
+      loadErrors.push(productResult.reason instanceof Error ? productResult.reason.message : t('admin.recipes.failed'));
+    }
+
+    if (ingredientResult.status === 'fulfilled') {
+      setIngredients(ingredientResult.value);
+    } else {
+      setIngredients([]);
+      loadErrors.push(ingredientResult.reason instanceof Error ? ingredientResult.reason.message : t('admin.recipes.failed'));
+    }
+
+    setError(loadErrors.join(' | '));
   };
 
   useEffect(() => {
@@ -52,6 +81,10 @@ export default function AdminRecipesPage() {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (!productId) {
+      setError(t('admin.recipes.noProducts'));
+      return;
+    }
     await api.createRecipe({
       productId,
       yieldQty: Number(yieldQty),
@@ -114,24 +147,38 @@ export default function AdminRecipesPage() {
 
               <TabsContent value="create">
                 <form className="space-y-3" onSubmit={submit}>
-                  <Select value={productId} onChange={e => setProductId(e.target.value)}>
-                    {products.map(product => (
-                      <option value={product.id} key={product.id}>
-                        {product.name}
-                      </option>
-                    ))}
-                  </Select>
-                  <Input type="number" value={yieldQty} onChange={e => setYieldQty(Number(e.target.value))} placeholder={t('admin.recipes.yieldPerBatch')} />
+                  <FormField label={t('admin.recipes.product')}>
+                    <Select value={productId} onChange={e => setProductId(e.target.value)} disabled={products.length === 0}>
+                      {products.length === 0 ? <option value="">{t('admin.recipes.noProducts')}</option> : null}
+                      {products.map(product => (
+                        <option value={product.id} key={product.id}>
+                          {product.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </FormField>
+                  <FormField label={t('admin.recipes.yieldPerBatch')}>
+                    <Input
+                      type="number"
+                      value={yieldQty}
+                      onChange={e => setYieldQty(Number(e.target.value))}
+                      placeholder={t('admin.recipes.yieldPerBatch')}
+                    />
+                  </FormField>
                   <div className="space-y-2">
+                    <p className="text-sm font-semibold text-muted">{t('admin.recipes.ingredients')}</p>
+                    {ingredients.length === 0 ? <p className="text-sm text-muted">{t('admin.recipes.noIngredients')}</p> : null}
                     {lines.map((line, index) => (
                       <div key={index} className="grid grid-cols-[1fr_140px] gap-2">
                         <Select
                           value={line.ingredientId}
+                          aria-label={`${t('admin.recipes.selectIngredient')} ${index + 1}`}
                           onChange={e =>
                             setLines(prev =>
                               prev.map((current, i) => (i === index ? { ...current, ingredientId: e.target.value } : current))
                             )
                           }
+                          disabled={ingredients.length === 0}
                         >
                           <option value="">{t('admin.recipes.selectIngredient')}</option>
                           {ingredients.map(ingredient => (
@@ -144,6 +191,7 @@ export default function AdminRecipesPage() {
                           type="number"
                           placeholder={t('admin.recipes.qty')}
                           value={line.qtyPerBatch}
+                          aria-label={`${t('admin.recipes.qty')} ${index + 1}`}
                           onChange={e =>
                             setLines(prev =>
                               prev.map((current, i) => (i === index ? { ...current, qtyPerBatch: Number(e.target.value) } : current))
@@ -157,7 +205,9 @@ export default function AdminRecipesPage() {
                     <Button type="button" variant="outline" onClick={addLine}>
                       {t('admin.recipes.addLine')}
                     </Button>
-                    <Button type="submit">{t('admin.recipes.save')}</Button>
+                    <Button type="submit" disabled={!productId}>
+                      {t('admin.recipes.save')}
+                    </Button>
                   </div>
                 </form>
               </TabsContent>

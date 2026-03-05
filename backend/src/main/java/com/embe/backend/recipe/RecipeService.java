@@ -9,6 +9,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
@@ -26,10 +27,31 @@ public class RecipeService {
     }
 
     public List<RecipeResponse> list() {
-        return recipeRepository.findAll().stream()
+        List<Recipe> recipes = recipeRepository.findAll().stream()
                 .sorted(Comparator.comparing(Recipe::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
-                .map(this::toResponse)
                 .toList();
+
+        List<RecipeResponse> responses = new ArrayList<>();
+        List<String> orphanRecipeIds = new ArrayList<>();
+        for (Recipe recipe : recipes) {
+            Product product;
+            try {
+                product = productService.getEntity(recipe.getProductId());
+            } catch (ApiException ex) {
+                if (ex.getStatus() == HttpStatus.NOT_FOUND) {
+                    orphanRecipeIds.add(recipe.getId());
+                    continue;
+                }
+                throw ex;
+            }
+            responses.add(toResponse(recipe, product));
+        }
+
+        if (!orphanRecipeIds.isEmpty()) {
+            recipeRepository.deleteAllById(orphanRecipeIds);
+        }
+
+        return responses;
     }
 
     public RecipeResponse get(String id) {
@@ -95,6 +117,10 @@ public class RecipeService {
 
     private RecipeResponse toResponse(Recipe recipe) {
         Product product = productService.getEntity(recipe.getProductId());
+        return toResponse(recipe, product);
+    }
+
+    private RecipeResponse toResponse(Recipe recipe, Product product) {
         List<RecipeIngredientResponse> items = recipe.getItems().stream().map(item -> {
             Ingredient ingredient = ingredientRepository.findById(item.getIngredientId())
                     .orElse(null);

@@ -1,6 +1,7 @@
 package com.embe.backend.product;
 
 import com.embe.backend.category.ProductCategoryService;
+import com.embe.backend.recipe.RecipeRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,12 +31,14 @@ class ProductServiceTest {
     private ProductStockLogRepository productStockLogRepository;
     @Mock
     private ProductCategoryService productCategoryService;
+    @Mock
+    private RecipeRepository recipeRepository;
 
     private ProductService productService;
 
     @BeforeEach
     void setUp() {
-        productService = new ProductService(productRepository, productStockLogRepository, productCategoryService);
+        productService = new ProductService(productRepository, productStockLogRepository, productCategoryService, recipeRepository);
     }
 
     @Test
