@@ -1,5 +1,8 @@
 package com.embe.backend.ingredient;
 
+import com.embe.backend.audit.AuditAction;
+import com.embe.backend.audit.AuditLogService;
+import com.embe.backend.audit.AuditModule;
 import com.embe.backend.auth.AuthService;
 import com.embe.backend.common.ApiException;
 import com.embe.backend.recipe.RecipeRepository;
@@ -25,19 +28,22 @@ public class IngredientService {
     private final RecipeRepository recipeRepository;
     private final InventoryMutationService inventoryMutationService;
     private final AuthService authService;
+    private final AuditLogService auditLogService;
 
     public IngredientService(
             IngredientRepository ingredientRepository,
             StockTransactionRepository stockTransactionRepository,
             RecipeRepository recipeRepository,
             InventoryMutationService inventoryMutationService,
-            AuthService authService
+            AuthService authService,
+            AuditLogService auditLogService
     ) {
         this.ingredientRepository = ingredientRepository;
         this.stockTransactionRepository = stockTransactionRepository;
         this.recipeRepository = recipeRepository;
         this.inventoryMutationService = inventoryMutationService;
         this.authService = authService;
+        this.auditLogService = auditLogService;
     }
 
     public List<IngredientResponse> list() {
@@ -66,11 +72,22 @@ public class IngredientService {
         if (saved.getCurrentStock().compareTo(BigDecimal.ZERO) > 0) {
             recordStockTransaction(saved.getId(), StockTransactionType.IN, saved.getCurrentStock(), null, "Initial stock", currentUser());
         }
-        return toResponse(saved);
+        IngredientResponse response = toResponse(saved);
+        auditLogService.record(
+                AuditModule.INGREDIENT,
+                AuditAction.CREATE,
+                "Created ingredient " + response.name(),
+                response.id(),
+                null,
+                response,
+                java.util.Map.of("unit", response.unit())
+        );
+        return response;
     }
 
     public IngredientResponse update(String id, IngredientRequest request) {
         Ingredient ingredient = getEntity(id);
+        IngredientResponse before = toResponse(ingredient);
         ingredientRepository.findByNameIgnoreCase(request.name())
                 .filter(existing -> !existing.getId().equals(id))
                 .ifPresent(existing -> {
@@ -79,15 +96,35 @@ public class IngredientService {
 
         apply(ingredient, request);
         ingredient.setUpdatedAt(Instant.now());
-        return toResponse(ingredientRepository.save(ingredient));
+        IngredientResponse after = toResponse(ingredientRepository.save(ingredient));
+        auditLogService.record(
+                AuditModule.INGREDIENT,
+                AuditAction.UPDATE,
+                "Updated ingredient " + after.name(),
+                after.id(),
+                before,
+                after,
+                java.util.Map.of("unit", after.unit())
+        );
+        return after;
     }
 
     public void delete(String id, boolean force) {
         Ingredient ingredient = getEntity(id);
+        IngredientResponse before = toResponse(ingredient);
         if (!force && recipeRepository.existsByItemsIngredientId(id)) {
             throw new ApiException(HttpStatus.CONFLICT, "Ingredient is used in recipes. Use force=true to delete.");
         }
         ingredientRepository.delete(ingredient);
+        auditLogService.record(
+                AuditModule.INGREDIENT,
+                AuditAction.DELETE,
+                "Deleted ingredient " + before.name(),
+                before.id(),
+                before,
+                null,
+                java.util.Map.of("force", force)
+        );
     }
 
     @Transactional
@@ -106,7 +143,21 @@ public class IngredientService {
         }
 
         recordStockTransaction(id, request.type(), request.qty(), request.unitCost(), request.note(), currentUser());
-        return toResponse(getEntity(id));
+        IngredientResponse after = toResponse(getEntity(id));
+        auditLogService.record(
+                AuditModule.INGREDIENT,
+                AuditAction.STOCK_ADJUST,
+                "Adjusted stock for ingredient " + after.name(),
+                after.id(),
+                null,
+                after,
+                java.util.Map.of(
+                        "type", request.type().name(),
+                        "qty", request.qty(),
+                        "note", request.note() == null ? "" : request.note()
+                )
+        );
+        return after;
     }
 
     public List<StockTransaction> listTransactions(String ingredientId) {
@@ -174,7 +225,17 @@ public class IngredientService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Failed to parse CSV file");
         }
 
-        return new CsvImportResult(imported, skipped);
+        CsvImportResult result = new CsvImportResult(imported, skipped);
+        auditLogService.record(
+                AuditModule.INGREDIENT,
+                AuditAction.IMPORT,
+                "Imported ingredients via CSV",
+                null,
+                null,
+                result,
+                java.util.Map.of("imported", imported, "skipped", skipped)
+        );
+        return result;
     }
 
     public Ingredient getEntity(String id) {

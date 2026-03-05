@@ -1,5 +1,8 @@
 package com.embe.backend.product;
 
+import com.embe.backend.audit.AuditAction;
+import com.embe.backend.audit.AuditLogService;
+import com.embe.backend.audit.AuditModule;
 import com.embe.backend.category.ProductCategoryService;
 import com.embe.backend.common.ApiException;
 import com.embe.backend.recipe.RecipeRepository;
@@ -26,17 +29,20 @@ public class ProductService {
     private final ProductStockLogRepository productStockLogRepository;
     private final ProductCategoryService productCategoryService;
     private final RecipeRepository recipeRepository;
+    private final AuditLogService auditLogService;
 
     public ProductService(
             ProductRepository productRepository,
             ProductStockLogRepository productStockLogRepository,
             ProductCategoryService productCategoryService,
-            RecipeRepository recipeRepository
+            RecipeRepository recipeRepository,
+            AuditLogService auditLogService
     ) {
         this.productRepository = productRepository;
         this.productStockLogRepository = productStockLogRepository;
         this.productCategoryService = productCategoryService;
         this.recipeRepository = recipeRepository;
+        this.auditLogService = auditLogService;
     }
 
     public List<ProductResponse> listAll() {
@@ -79,7 +85,17 @@ public class ProductService {
                 if (request.currentStock().compareTo(BigDecimal.ZERO) > 0) {
                     saveStockLog(saved.getId(), ProductStockLogType.IN, request.currentStock(), "Initial stock", null, "system");
                 }
-                return toResponse(saved);
+                ProductResponse response = toResponse(saved);
+                auditLogService.record(
+                        AuditModule.PRODUCT,
+                        AuditAction.CREATE,
+                        "Created product " + response.name(),
+                        saved.getId(),
+                        null,
+                        response,
+                        java.util.Map.of("sku", response.sku())
+                );
+                return response;
             } catch (DataIntegrityViolationException ex) {
                 if (!isDuplicateKey(ex)) {
                     throw ex;
@@ -93,12 +109,15 @@ public class ProductService {
 
     public ProductResponse update(String id, ProductRequest request) {
         Product product = getEntity(id);
+        ProductResponse before = toResponse(product);
         String categoryName = productCategoryService.requireExistingCategoryNameOrCurrent(request.category(), product.getCategory());
         applyCommonFields(product, request, categoryName);
         product.setUpdatedAt(Instant.now());
 
         if (Boolean.TRUE.equals(request.regenerateSku())) {
-            return saveWithRegeneratedSku(product, categoryName);
+            ProductResponse after = saveWithRegeneratedSku(product, categoryName);
+            logUpdate(before, after);
+            return after;
         }
 
         String requestedSku = request.sku() == null ? "" : request.sku().trim().toUpperCase(Locale.ROOT);
@@ -109,13 +128,25 @@ public class ProductService {
                     throw new ApiException(HttpStatus.CONFLICT, "SKU already exists");
                 });
         product.setSku(finalSku);
-        return saveWithManualSku(product);
+        ProductResponse after = saveWithManualSku(product);
+        logUpdate(before, after);
+        return after;
     }
 
     public void delete(String id) {
         Product product = getEntity(id);
+        ProductResponse before = toResponse(product);
         recipeRepository.deleteByProductId(product.getId());
         productRepository.delete(product);
+        auditLogService.record(
+                AuditModule.PRODUCT,
+                AuditAction.DELETE,
+                "Deleted product " + before.name(),
+                product.getId(),
+                before,
+                null,
+                java.util.Map.of("sku", before.sku())
+        );
     }
 
     public String exportStockLogsCsv() {
@@ -265,6 +296,18 @@ public class ProductService {
                 product.getImages(),
                 product.getCreatedAt(),
                 product.getUpdatedAt()
+        );
+    }
+
+    private void logUpdate(ProductResponse before, ProductResponse after) {
+        auditLogService.record(
+                AuditModule.PRODUCT,
+                AuditAction.UPDATE,
+                "Updated product " + after.name(),
+                after.id(),
+                before,
+                after,
+                java.util.Map.of("sku", after.sku())
         );
     }
 

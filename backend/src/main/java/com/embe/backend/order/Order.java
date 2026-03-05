@@ -3,6 +3,8 @@ package com.embe.backend.order;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.Field;
+import org.springframework.data.mongodb.core.mapping.FieldType;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -21,10 +23,13 @@ public class Order {
 
     private OrderStatus status;
 
+    @Field(targetType = FieldType.DECIMAL128)
     private BigDecimal subtotal;
 
+    @Field(targetType = FieldType.DECIMAL128)
     private BigDecimal tax;
 
+    @Field(targetType = FieldType.DECIMAL128)
     private BigDecimal total;
 
     private boolean stockDeducted;

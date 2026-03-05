@@ -1,6 +1,9 @@
 package com.embe.backend.order;
 
 import com.embe.backend.auth.AuthService;
+import com.embe.backend.audit.AuditAction;
+import com.embe.backend.audit.AuditLogService;
+import com.embe.backend.audit.AuditModule;
 import com.embe.backend.common.ApiException;
 import com.embe.backend.product.Product;
 import com.embe.backend.product.ProductService;
@@ -21,17 +24,20 @@ public class OrderService {
     private final ProductService productService;
     private final InventoryMutationService inventoryMutationService;
     private final AuthService authService;
+    private final AuditLogService auditLogService;
 
     public OrderService(
             OrderRepository orderRepository,
             ProductService productService,
             InventoryMutationService inventoryMutationService,
-            AuthService authService
+            AuthService authService,
+            AuditLogService auditLogService
     ) {
         this.orderRepository = orderRepository;
         this.productService = productService;
         this.inventoryMutationService = inventoryMutationService;
         this.authService = authService;
+        this.auditLogService = auditLogService;
     }
 
     @Transactional
@@ -68,7 +74,17 @@ public class OrderService {
         order.setCreatedAt(now);
         order.setUpdatedAt(now);
 
-        return toResponse(orderRepository.save(order));
+        OrderResponse response = toResponse(orderRepository.save(order));
+        auditLogService.record(
+                AuditModule.ORDER,
+                AuditAction.CREATE,
+                "Created order " + response.id(),
+                response.id(),
+                null,
+                response,
+                java.util.Map.of("status", response.status().name())
+        );
+        return response;
     }
 
     public List<OrderResponse> listMyOrders() {
@@ -91,10 +107,11 @@ public class OrderService {
     @Transactional
     public OrderResponse updateStatus(String id, UpdateOrderStatusRequest request) {
         Order order = getEntity(id);
+        OrderResponse before = toResponse(order);
         OrderStatus target = request.status();
 
         if (target == order.getStatus()) {
-            return toResponse(order);
+            return before;
         }
 
         if (target == OrderStatus.CONFIRMED && !order.isStockDeducted()) {
@@ -118,7 +135,22 @@ public class OrderService {
 
         order.setStatus(target);
         order.setUpdatedAt(Instant.now());
-        return toResponse(orderRepository.save(order));
+        OrderResponse after = toResponse(orderRepository.save(order));
+
+        auditLogService.record(
+                AuditModule.ORDER,
+                AuditAction.STATUS_CHANGE,
+                "Updated order status " + before.status() + " -> " + after.status(),
+                order.getId(),
+                before,
+                after,
+                java.util.Map.of(
+                        "fromStatus", before.status().name(),
+                        "toStatus", after.status().name()
+                )
+        );
+
+        return after;
     }
 
     public Order getEntity(String id) {

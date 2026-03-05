@@ -1,4 +1,4 @@
-import { DashboardData, Ingredient, Order, Product, ProductCategory, Recipe, User } from '@/lib/types';
+import { AdminManagedUser, AuditLogDetail, AuditLogListItem, BakeRecord, DashboardData, Ingredient, Order, Product, ProductCategory, Recipe, Role, User } from '@/lib/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
@@ -86,14 +86,32 @@ export const api = {
   updateRecipe: (id: string, payload: unknown) => request<Recipe>(`/api/admin/recipes/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
   deleteRecipe: (id: string) => request<void>(`/api/admin/recipes/${id}`, { method: 'DELETE' }),
 
-  produceBake: (payload: unknown) => request('/api/admin/bakes', { method: 'POST', body: JSON.stringify(payload) }),
-  listBakes: () => request('/api/admin/bakes'),
+  produceBake: (payload: unknown) => request<BakeRecord>('/api/admin/bakes', { method: 'POST', body: JSON.stringify(payload) }),
+  listBakes: () => request<BakeRecord[]>('/api/admin/bakes'),
 
   createOrder: (payload: unknown) => request<Order>('/api/orders', { method: 'POST', body: JSON.stringify(payload) }),
   listMyOrders: () => request<Order[]>('/api/orders'),
 
   listOrdersAdmin: () => request<Order[]>('/api/admin/orders'),
   updateOrderStatus: (id: string, status: string) => request<Order>(`/api/admin/orders/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
+
+  listUsersAdmin: () => request<AdminManagedUser[]>('/api/admin/users'),
+  createUserAdmin: (payload: { email: string; fullName: string; password: string; roles: Role[] }) =>
+    request<AdminManagedUser>('/api/admin/users', { method: 'POST', body: JSON.stringify(payload) }),
+  updateUserAdmin: (id: string, payload: { fullName: string; password?: string; roles: Role[] }) =>
+    request<AdminManagedUser>(`/api/admin/users/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+  deleteUserAdmin: (id: string) => request<void>(`/api/admin/users/${id}`, { method: 'DELETE' }),
+
+  listAuditLogs: (params: { module?: string; action?: string; q?: string; limit?: number } = {}) => {
+    const search = new URLSearchParams();
+    if (params.module) search.set('module', params.module);
+    if (params.action) search.set('action', params.action);
+    if (params.q) search.set('q', params.q);
+    if (params.limit != null) search.set('limit', String(params.limit));
+    const query = search.toString();
+    return request<AuditLogListItem[]>(`/api/admin/audit-logs${query ? `?${query}` : ''}`);
+  },
+  getAuditLog: (id: string) => request<AuditLogDetail>(`/api/admin/audit-logs/${id}`),
 
   getDashboard: () => request<DashboardData>('/api/dashboard')
 };
