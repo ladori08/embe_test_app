@@ -24,6 +24,28 @@ export interface Ingredient {
   costTrackingMethod: string;
 }
 
+export interface StockLotAllocation {
+  lotCode: string;
+  qty: number;
+}
+
+export interface IngredientTransaction {
+  id: string;
+  ingredientId: string;
+  ingredientName: string;
+  ingredientUnit?: 'g' | 'ml' | 'pcs' | null;
+  type: 'IN' | 'OUT';
+  qty: number;
+  inputUnit?: 'g' | 'kg' | 'ml' | 'l' | 'pcs' | null;
+  unitCost?: number | null;
+  note?: string | null;
+  lotCode?: string | null;
+  remainingQty?: number | null;
+  allocations?: StockLotAllocation[];
+  createdAt: string;
+  createdBy?: string | null;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -66,6 +88,14 @@ export interface BakeAppliedItem {
   qtyPerBatch: number;
 }
 
+export interface BakeDeduction {
+  ingredientId: string;
+  ingredientName?: string;
+  unit?: string;
+  qty: number;
+  lotAllocations?: StockLotAllocation[];
+}
+
 export interface BakeRecord {
   id: string;
   recipeId: string;
@@ -75,6 +105,7 @@ export interface BakeRecord {
   appliedItems?: BakeAppliedItem[];
   factor: number;
   producedQty: number;
+  deductions?: BakeDeduction[];
   createdAt: string;
 }
 

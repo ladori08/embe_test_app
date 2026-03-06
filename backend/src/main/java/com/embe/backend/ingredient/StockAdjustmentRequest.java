@@ -2,6 +2,7 @@ package com.embe.backend.ingredient;
 
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 
 import java.math.BigDecimal;
 
@@ -11,6 +12,8 @@ public record StockAdjustmentRequest(
         @NotNull(message = "Qty is required")
         @DecimalMin(value = "0.0001", message = "Qty must be greater than 0")
         BigDecimal qty,
+        @Pattern(regexp = "^(g|kg|ml|l|pcs)?$", message = "Input unit must be g, kg, ml, l, or pcs")
+        String inputUnit,
         BigDecimal unitCost,
         String note
 ) {

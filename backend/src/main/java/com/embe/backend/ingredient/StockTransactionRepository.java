@@ -6,4 +6,6 @@ import java.util.List;
 
 public interface StockTransactionRepository extends MongoRepository<StockTransaction, String> {
     List<StockTransaction> findByIngredientIdOrderByCreatedAtDesc(String ingredientId);
+
+    List<StockTransaction> findByIngredientIdAndTypeOrderByCreatedAtAsc(String ingredientId, StockTransactionType type);
 }

@@ -7,6 +7,7 @@ import com.embe.backend.auth.AuthService;
 import com.embe.backend.common.ApiException;
 import com.embe.backend.ingredient.Ingredient;
 import com.embe.backend.ingredient.IngredientService;
+import com.embe.backend.ingredient.StockLotAllocation;
 import com.embe.backend.ingredient.StockTransactionType;
 import com.embe.backend.product.Product;
 import com.embe.backend.product.ProductStockLogType;
@@ -175,15 +176,30 @@ public class BakeService {
 
     private BakeDeduction deductIngredient(RecipeItem item, BigDecimal factor) {
         BigDecimal required = item.getQtyPerBatch().multiply(factor);
+        Ingredient ingredient = ingredientService.getEntity(item.getIngredientId());
         boolean ok = inventoryMutationService.deductIngredientIfEnough(item.getIngredientId(), required);
         if (!ok) {
             throw new ApiException(HttpStatus.CONFLICT, "Insufficient ingredient stock for ingredient " + item.getIngredientId());
         }
-        ingredientService.recordStockTransaction(item.getIngredientId(), StockTransactionType.OUT, required, null, "Production deduction", currentUser());
+        List<StockLotAllocation> lotAllocations = ingredientService.consumeLots(item.getIngredientId(), required);
+        ingredientService.recordStockTransaction(
+                item.getIngredientId(),
+                ingredient.getName(),
+                StockTransactionType.OUT,
+                required,
+                ingredient.getUnit(),
+                null,
+                "Production deduction",
+                currentUser(),
+                lotAllocations
+        );
 
         BakeDeduction deduction = new BakeDeduction();
         deduction.setIngredientId(item.getIngredientId());
+        deduction.setIngredientName(ingredient.getName());
+        deduction.setUnit(ingredient.getUnit());
         deduction.setQty(required);
+        deduction.setLotAllocations(lotAllocations);
         return deduction;
     }
 

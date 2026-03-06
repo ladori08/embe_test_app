@@ -1,6 +1,22 @@
-import { AdminManagedUser, AuditLogDetail, AuditLogListItem, BakeRecord, DashboardData, Ingredient, Order, Product, ProductCategory, Recipe, Role, User } from '@/lib/types';
+import {
+  AdminManagedUser,
+  AuditLogDetail,
+  AuditLogListItem,
+  BakeRecord,
+  DashboardData,
+  Ingredient,
+  IngredientTransaction,
+  Order,
+  Product,
+  ProductCategory,
+  Recipe,
+  Role,
+  User
+} from '@/lib/types';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+const API_URL =
+  (globalThis as typeof globalThis & { process?: { env?: Record<string, string | undefined> } }).process?.env?.NEXT_PUBLIC_API_URL ||
+  'http://localhost:8080';
 
 class ApiError extends Error {
   status: number;
@@ -12,14 +28,14 @@ class ApiError extends Error {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const headers = new Headers(options.headers);
+  const headers = new Headers(options.headers || undefined);
   headers.set('Content-Type', 'application/json');
 
   const response = await fetch(`${API_URL}${path}`, {
     ...options,
     credentials: 'include',
     headers
-  });
+  } satisfies RequestInit);
 
   if (response.status === 204) {
     return undefined as T;
@@ -66,6 +82,19 @@ export const api = {
   listIngredients: () => request<Ingredient[]>('/api/admin/ingredients'),
   createIngredient: (payload: Partial<Ingredient>) => request<Ingredient>('/api/admin/ingredients', { method: 'POST', body: JSON.stringify(payload) }),
   updateIngredient: (id: string, payload: Partial<Ingredient>) => request<Ingredient>(`/api/admin/ingredients/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+  adjustIngredientStock: (id: string, payload: { type: 'IN' | 'OUT'; qty: number; inputUnit?: 'g' | 'kg' | 'ml' | 'l' | 'pcs'; unitCost?: number; note?: string }) =>
+    request<Ingredient>(`/api/admin/ingredients/${id}/stock-adjustments`, { method: 'POST', body: JSON.stringify(payload) }),
+  listIngredientTransactions: (params: { ingredientId?: string; type?: 'IN' | 'OUT'; q?: string; from?: string; to?: string; limit?: number } = {}) => {
+    const search = new URLSearchParams();
+    if (params.ingredientId) search.set('ingredientId', params.ingredientId);
+    if (params.type) search.set('type', params.type);
+    if (params.q) search.set('q', params.q);
+    if (params.from) search.set('from', params.from);
+    if (params.to) search.set('to', params.to);
+    if (params.limit != null) search.set('limit', String(params.limit));
+    const query = search.toString();
+    return request<IngredientTransaction[]>(`/api/admin/ingredients/transactions${query ? `?${query}` : ''}`);
+  },
   deleteIngredient: (id: string) => request<void>(`/api/admin/ingredients/${id}`, { method: 'DELETE' }),
 
   listProductsAdmin: () => request<Product[]>('/api/admin/products'),
