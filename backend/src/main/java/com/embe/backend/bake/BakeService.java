@@ -76,8 +76,18 @@ public class BakeService {
         BigDecimal producedQty = recipe.getYieldQty().multiply(factor);
 
         List<BakeDeduction> deductions = appliedRecipeItems.stream().map(item -> deductIngredient(item, factor)).toList();
+        BigDecimal totalIngredientCost = deductions.stream()
+                .map(BakeDeduction::getCost)
+                .filter(value -> value != null && value.compareTo(BigDecimal.ZERO) > 0)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal producedUnitCost = producedQty.compareTo(BigDecimal.ZERO) > 0
+                ? totalIngredientCost.divide(producedQty, 6, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
 
         inventoryMutationService.addProduct(recipe.getProductId(), producedQty);
+        if (totalIngredientCost.compareTo(BigDecimal.ZERO) > 0) {
+            productService.updateCost(recipe.getProductId(), producedUnitCost);
+        }
         productService.saveStockLog(recipe.getProductId(), ProductStockLogType.IN, producedQty, "Production bake", null, currentUser());
 
         BakeRecord record = new BakeRecord();
@@ -89,6 +99,8 @@ public class BakeService {
         record.setAppliedItems(toAppliedSnapshot(appliedRecipeItems));
         record.setFactor(factor);
         record.setProducedQty(producedQty);
+        record.setTotalIngredientCost(totalIngredientCost);
+        record.setProducedUnitCost(producedUnitCost);
         record.setDeductions(deductions);
         record.setCreatedAt(Instant.now());
         record.setCreatedBy(currentUser());
@@ -108,6 +120,8 @@ public class BakeService {
         metadata.put("customOverride", customOverride);
         metadata.put("factor", factor);
         metadata.put("producedQty", producedQty);
+        metadata.put("totalIngredientCost", totalIngredientCost);
+        metadata.put("producedUnitCost", producedUnitCost);
 
         auditLogService.record(
                 AuditModule.PRODUCTION,
@@ -199,6 +213,7 @@ public class BakeService {
         deduction.setIngredientName(ingredient.getName());
         deduction.setUnit(ingredient.getUnit());
         deduction.setQty(required);
+        deduction.setCost(computeAllocationCost(lotAllocations));
         deduction.setLotAllocations(lotAllocations);
         return deduction;
     }
@@ -227,10 +242,22 @@ public class BakeService {
                 record.getAppliedItems() == null ? List.of() : record.getAppliedItems(),
                 record.getFactor(),
                 record.getProducedQty(),
+                record.getTotalIngredientCost(),
+                record.getProducedUnitCost(),
                 record.getDeductions(),
                 record.getCreatedAt(),
                 record.getCreatedBy()
         );
+    }
+
+    private BigDecimal computeAllocationCost(List<StockLotAllocation> lotAllocations) {
+        if (lotAllocations == null || lotAllocations.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        return lotAllocations.stream()
+                .filter(allocation -> allocation.getUnitCost() != null && allocation.getQty() != null)
+                .map(allocation -> allocation.getUnitCost().multiply(allocation.getQty()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     private String currentUser() {

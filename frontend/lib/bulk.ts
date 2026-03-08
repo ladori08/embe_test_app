@@ -8,15 +8,12 @@ export function normalizeHeaderKey(value: string): string {
 }
 
 export function parsePastedRows(raw: string): string[][] {
-  const normalized = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
-  if (!normalized) {
+  const normalized = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  if (!normalized.trim()) {
     return [];
   }
 
-  const lines = normalized
-    .split('\n')
-    .map(line => line.trim())
-    .filter(Boolean);
+  const lines = normalized.split('\n').filter(line => line.trim().length > 0);
 
   if (lines.length === 0) {
     return [];

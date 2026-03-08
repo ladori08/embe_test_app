@@ -35,6 +35,12 @@ public class BakeRecord {
     @Field(targetType = FieldType.DECIMAL128)
     private BigDecimal producedQty;
 
+    @Field(targetType = FieldType.DECIMAL128)
+    private BigDecimal totalIngredientCost;
+
+    @Field(targetType = FieldType.DECIMAL128)
+    private BigDecimal producedUnitCost;
+
     private List<BakeDeduction> deductions;
 
     @Indexed
@@ -112,6 +118,22 @@ public class BakeRecord {
 
     public void setProducedQty(BigDecimal producedQty) {
         this.producedQty = producedQty;
+    }
+
+    public BigDecimal getTotalIngredientCost() {
+        return totalIngredientCost;
+    }
+
+    public void setTotalIngredientCost(BigDecimal totalIngredientCost) {
+        this.totalIngredientCost = totalIngredientCost;
+    }
+
+    public BigDecimal getProducedUnitCost() {
+        return producedUnitCost;
+    }
+
+    public void setProducedUnitCost(BigDecimal producedUnitCost) {
+        this.producedUnitCost = producedUnitCost;
     }
 
     public List<BakeDeduction> getDeductions() {

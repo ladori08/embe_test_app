@@ -14,9 +14,23 @@ import { Select } from '@/components/ui/select';
 import { useI18n } from '@/components/language-context';
 import { api } from '@/lib/api';
 import { Ingredient, IngredientTransaction, StockLotAllocation } from '@/lib/types';
-import { buildHeaderIndex, downloadTextFile, findColumnIndex, parseFlexibleNumber, parsePastedRows } from '@/lib/bulk';
+import { buildHeaderIndex, findColumnIndex, parseFlexibleNumber, parsePastedRows } from '@/lib/bulk';
 
 type UnitDisplayMode = 'small' | 'large';
+type IngredientImportPayload = {
+  name: string;
+  ingredientCode: string;
+  unit: 'g' | 'ml' | 'pcs';
+  currentStock: number;
+  totalCost: number | null;
+  reorderLevel: number;
+};
+
+type IngredientImportAnalysis = {
+  rows: IngredientImportPayload[];
+  errors: string[];
+  totalRows: number;
+};
 
 const emptyForm = { name: '', unit: 'g', currentStock: 0, reorderLevel: 0, costTrackingMethod: 'AVG_BIN' };
 
@@ -54,6 +68,15 @@ const formatQty = (value: number) => {
   return Number(value.toFixed(4)).toLocaleString('vi-VN');
 };
 
+const normalizeIngredientCode = (value: string) => {
+  const normalized = value.trim().toUpperCase();
+  if (!normalized || normalized === '-' || /^0([.,]0+)?$/.test(normalized)) {
+    return '';
+  }
+  return normalized;
+};
+const normalizeIngredientKey = (name: string, unit: string) => `${name.trim().toLowerCase()}::${unit.trim().toLowerCase()}`;
+
 export default function AdminIngredientsPage() {
   const [items, setItems] = useState<Ingredient[]>([]);
   const [loading, setLoading] = useState(true);
@@ -67,13 +90,15 @@ export default function AdminIngredientsPage() {
   const [restockTarget, setRestockTarget] = useState<Ingredient | null>(null);
   const [restockQty, setRestockQty] = useState('0');
   const [restockUnit, setRestockUnit] = useState<'g' | 'kg' | 'ml' | 'l' | 'pcs'>('g');
-  const [restockCost, setRestockCost] = useState('');
+  const [restockTotalCost, setRestockTotalCost] = useState('');
   const [restockNote, setRestockNote] = useState('');
 
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState('');
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState('');
+  const [importPreview, setImportPreview] = useState<IngredientImportAnalysis | null>(null);
+  const [importWorkbookName, setImportWorkbookName] = useState('');
 
   const [transactions, setTransactions] = useState<IngredientTransaction[]>([]);
   const [txLoading, setTxLoading] = useState(false);
@@ -88,6 +113,13 @@ export default function AdminIngredientsPage() {
   const { t } = useI18n();
 
   const unitOptions = useMemo(() => getInputUnitOptions(restockTarget?.unit), [restockTarget]);
+  const rawPreviewRows = useMemo(() => {
+    try {
+      return parsePastedRows(importText);
+    } catch {
+      return [];
+    }
+  }, [importText]);
 
   const loadIngredients = async () => {
     setLoading(true);
@@ -159,7 +191,7 @@ export default function AdminIngredientsPage() {
     setRestockQty('0');
     const options = getInputUnitOptions(item.unit);
     setRestockUnit((options[0] || 'g') as 'g' | 'kg' | 'ml' | 'l' | 'pcs');
-    setRestockCost('');
+    setRestockTotalCost('');
     setRestockNote('');
     setRestockOpen(true);
   };
@@ -192,9 +224,9 @@ export default function AdminIngredientsPage() {
       return;
     }
 
-    const unitCost = restockCost.trim() ? parseFlexibleNumber(restockCost) : undefined;
-    if (unitCost != null && (!Number.isFinite(unitCost) || unitCost < 0)) {
-      setError(t('admin.ingredients.invalidUnitCost'));
+    const totalCost = restockTotalCost.trim() ? parseFlexibleNumber(restockTotalCost) : undefined;
+    if (totalCost == null || !Number.isFinite(totalCost) || totalCost <= 0) {
+      setError(t('admin.ingredients.requiredTotalCost'));
       return;
     }
 
@@ -202,7 +234,7 @@ export default function AdminIngredientsPage() {
       type: 'IN',
       qty,
       inputUnit: restockUnit,
-      unitCost,
+      totalCost,
       note: restockNote.trim() || 'Restock'
     });
     setRestockOpen(false);
@@ -212,6 +244,14 @@ export default function AdminIngredientsPage() {
   const remove = async (id: string) => {
     await api.deleteIngredient(id);
     await loadAll();
+  };
+
+  const openBulkImportModal = () => {
+    setImportText('');
+    setImportResult('');
+    setImportPreview(null);
+    setImportWorkbookName('');
+    setImportOpen(true);
   };
 
   const applyTransactionFilter = async (e: FormEvent) => {
@@ -227,92 +267,292 @@ export default function AdminIngredientsPage() {
     await loadTransactions({ type: '', query: '', from: '', to: '' });
   };
 
-  const downloadTemplate = () => {
-    const template = ['name,unit,currentStock,reorderLevel,costTrackingMethod', 'Flour,g,5,1,AVG_BIN', 'Sugar,g,2,0.5,AVG_BIN'].join('\n');
-    downloadTextFile('ingredients-import-template.csv', template);
+  const downloadTemplate = async () => {
+    const ExcelJS = await import('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    workbook.calcProperties.fullCalcOnLoad = true;
+    const importSheet = workbook.addWorksheet('Import');
+    const ingredientsSheet = workbook.addWorksheet('Ingredients');
+    const ingredients = [...items].sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+
+    ingredientsSheet.columns = [
+      { header: 'ingredientCode', key: 'ingredientCode', width: 18 },
+      { header: 'name', key: 'name', width: 32 }
+    ];
+    ingredients.forEach(ingredient => {
+      ingredientsSheet.addRow({
+        ingredientCode: ingredient.ingredientCode || '',
+        name: ingredient.name
+      });
+    });
+    ingredientsSheet.views = [{ state: 'frozen', ySplit: 1 }];
+
+    importSheet.columns = [
+      { header: 'ingredientCode', key: 'ingredientCode', width: 18 },
+      { header: 'name', key: 'name', width: 32 },
+      { header: 'unit', key: 'unit', width: 12 },
+      { header: 'currentStock', key: 'currentStock', width: 14 },
+      { header: 'totalCost', key: 'totalCost', width: 14 },
+      { header: 'reorderLevel', key: 'reorderLevel', width: 14 }
+    ];
+    importSheet.views = [{ state: 'frozen', ySplit: 1 }];
+
+    const header = importSheet.getRow(1);
+    header.font = { bold: true };
+
+    const maxDataRow = 501;
+    const ingredientsLastRow = Math.max(2, ingredients.length + 1);
+    for (let rowNumber = 2; rowNumber <= maxDataRow; rowNumber++) {
+      const codeCell = importSheet.getCell(`A${rowNumber}`);
+      codeCell.value = {
+        formula: `IF(B${rowNumber}="","",IFERROR(XLOOKUP(B${rowNumber},Ingredients!$B:$B,Ingredients!$A:$A,""),IFERROR(INDEX(Ingredients!$A:$A,MATCH(B${rowNumber},Ingredients!$B:$B,0)),"")))`,
+        result: ''
+      };
+      codeCell.protection = { locked: false };
+      if (ingredients.length > 0) {
+        const nameCell = importSheet.getCell(`B${rowNumber}`);
+        nameCell.dataValidation = {
+          type: 'list',
+          allowBlank: true,
+          formulae: [`Ingredients!$B$2:$B$${ingredientsLastRow}`],
+          showErrorMessage: false
+        };
+        nameCell.protection = { locked: false };
+      }
+      importSheet.getCell(`C${rowNumber}`).protection = { locked: false };
+      importSheet.getCell(`D${rowNumber}`).protection = { locked: false };
+      importSheet.getCell(`E${rowNumber}`).protection = { locked: false };
+      importSheet.getCell(`F${rowNumber}`).protection = { locked: false };
+    }
+
+    importSheet.getCell('C2').value = 'g';
+    importSheet.getCell('D2').value = 0;
+    importSheet.getCell('E2').value = 0;
+    importSheet.getCell('F2').value = 0;
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'ingredients-import-template.xlsx';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const readWorkbookImportSheet = async (file: File) => {
+    const ExcelJS = await import('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(await file.arrayBuffer());
+    const importSheet = workbook.getWorksheet('Import') ?? workbook.worksheets[0];
+    if (!importSheet) {
+      throw new Error('No worksheet found in workbook');
+    }
+
+    const maxColumns = Math.max(importSheet.columnCount, 6);
+    const rows: string[][] = [];
+    for (let rowNumber = 1; rowNumber <= importSheet.rowCount; rowNumber++) {
+      const row = importSheet.getRow(rowNumber);
+      const values: string[] = [];
+      for (let col = 1; col <= maxColumns; col++) {
+        values.push((row.getCell(col).text || '').trim());
+      }
+      if (values.some(value => value)) {
+        rows.push(values);
+      }
+    }
+
+    if (rows.length === 0) {
+      throw new Error(t('admin.ingredients.bulkImportEmpty'));
+    }
+
+    setImportWorkbookName(file.name);
+    setImportText(rows.map(row => row.join('\t')).join('\n'));
+    setImportPreview(null);
+    setImportResult(`Loaded Import sheet from ${file.name}`);
+  };
+
+  const analyzeIngredientImport = (): IngredientImportAnalysis => {
+    const rows = parsePastedRows(importText);
+    if (rows.length === 0) {
+      throw new Error(t('admin.ingredients.bulkImportEmpty'));
+    }
+
+    const headerIndex = buildHeaderIndex(rows[0]);
+    const detectedName = findColumnIndex(headerIndex, ['name', 'ten']);
+    const detectedCode = findColumnIndex(headerIndex, ['ingredientCode', 'code', 'ma', 'manl']);
+    const detectedUnit = findColumnIndex(headerIndex, ['unit', 'dvt', 'donvi', 'donvitinh']);
+    const detectedStock = findColumnIndex(headerIndex, ['currentStock', 'stock', 'qty', 'sl', 'soluong']);
+    const detectedTotalCost = findColumnIndex(headerIndex, ['totalCost', 'total', 'tongtien', 'thanhtien', 'cost', 'gia']);
+    const detectedReorder = findColumnIndex(headerIndex, ['reorderLevel', 'reorder', 'nguongnhaplai', 'threshold']);
+
+    const hasHeader = detectedName >= 0 || detectedCode >= 0 || detectedUnit >= 0 || detectedStock >= 0;
+    const dataRows = hasHeader ? rows.slice(1) : rows;
+
+    const codeIndex = hasHeader ? detectedCode : -1;
+    const nameIndex = hasHeader ? detectedName : 0;
+    const unitIndex = hasHeader ? detectedUnit : 1;
+    const stockIndex = hasHeader ? detectedStock : 2;
+    const totalCostIndex = hasHeader ? detectedTotalCost : 3;
+    const reorderIndex = hasHeader ? detectedReorder : 4;
+
+    const parsedRows: IngredientImportPayload[] = [];
+    const errors: string[] = [];
+    let totalRows = 0;
+
+    for (let i = 0; i < dataRows.length; i++) {
+      const row = dataRows[i];
+      const lineNo = hasHeader ? i + 2 : i + 1;
+      if (!row || row.every(cell => !cell.trim())) {
+        continue;
+      }
+      totalRows++;
+
+      const codeRaw = codeIndex >= 0 ? (row[codeIndex] || '').trim() : '';
+      const ingredientCode = codeRaw.startsWith('=') ? '' : normalizeIngredientCode(codeRaw);
+      const name = nameIndex >= 0 ? (row[nameIndex] || '').trim() : '';
+      const unitRaw = unitIndex >= 0 ? (row[unitIndex] || '').trim().toLowerCase() : '';
+      const stockRaw = stockIndex >= 0 ? (row[stockIndex] || '').trim() : '';
+      const totalCostRaw = totalCostIndex >= 0 ? (row[totalCostIndex] || '').trim() : '';
+      const reorderRaw = reorderIndex >= 0 ? (row[reorderIndex] || '').trim() : '';
+
+      if (!name || !unitRaw || !stockRaw) {
+        errors.push(`Line ${lineNo}: missing required data`);
+        continue;
+      }
+
+      if (!['g', 'ml', 'pcs'].includes(unitRaw)) {
+        errors.push(`Line ${lineNo}: invalid unit "${unitRaw}"`);
+        continue;
+      }
+      if (ingredientCode && !/^[A-Z0-9-]{3,20}$/.test(ingredientCode)) {
+        errors.push(`Line ${lineNo}: invalid ingredientCode "${ingredientCode}"`);
+        continue;
+      }
+
+      const currentStock = parseFlexibleNumber(stockRaw);
+      const parsedCost = totalCostRaw ? parseFlexibleNumber(totalCostRaw) : NaN;
+      const reorderLevel = reorderRaw ? parseFlexibleNumber(reorderRaw) : 0;
+      if (!Number.isFinite(currentStock) || currentStock < 0 || !Number.isFinite(reorderLevel) || reorderLevel < 0) {
+        errors.push(`Line ${lineNo}: invalid numeric value`);
+        continue;
+      }
+      const totalCost = currentStock > 0 ? parsedCost : null;
+      if (currentStock > 0 && (totalCost == null || !Number.isFinite(totalCost) || totalCost <= 0)) {
+        errors.push(`Line ${lineNo}: totalCost is required when currentStock > 0`);
+        continue;
+      }
+
+      parsedRows.push({
+        name,
+        ingredientCode,
+        unit: unitRaw as 'g' | 'ml' | 'pcs',
+        currentStock,
+        reorderLevel,
+        totalCost
+      });
+    }
+
+    if (totalRows === 0) {
+      throw new Error(t('admin.ingredients.bulkImportEmpty'));
+    }
+
+    return {
+      rows: parsedRows,
+      errors,
+      totalRows
+    };
+  };
+
+  const validateBulkImport = () => {
+    try {
+      const analysis = analyzeIngredientImport();
+      setImportPreview(analysis);
+      const previewErrors = analysis.errors.slice(0, 5).join(' | ');
+      setImportResult(
+        `${t('admin.ingredients.bulkImportPreview', {
+          total: analysis.totalRows,
+          valid: analysis.rows.length,
+          invalid: analysis.errors.length
+        })}${previewErrors ? ` (${previewErrors})` : ''}`
+      );
+    } catch (err) {
+      setImportResult(err instanceof Error ? err.message : t('admin.ingredients.bulkImportFailed'));
+    }
   };
 
   const importBulk = async () => {
     setImporting(true);
     try {
-      const rows = parsePastedRows(importText);
-      if (rows.length === 0) {
-        throw new Error(t('admin.ingredients.bulkImportEmpty'));
+      const analysis = importPreview ?? analyzeIngredientImport();
+      let imported = 0;
+      const errors = [...analysis.errors];
+      const existing = await api.listIngredients();
+      const existingByCode = new Map<string, Ingredient>();
+      const existingByNameUnit = new Map<string, Ingredient>();
+
+      for (const ingredient of existing) {
+        if (ingredient.ingredientCode && ingredient.ingredientCode.trim()) {
+          existingByCode.set(normalizeIngredientCode(ingredient.ingredientCode), ingredient);
+        }
+        existingByNameUnit.set(normalizeIngredientKey(ingredient.name, ingredient.unit), ingredient);
       }
 
-      const headerIndex = buildHeaderIndex(rows[0]);
-      const detectedName = findColumnIndex(headerIndex, ['name', 'ten']);
-      const detectedUnit = findColumnIndex(headerIndex, ['unit', 'dvt', 'donvi', 'donvitinh']);
-      const detectedStock = findColumnIndex(headerIndex, ['currentStock', 'stock', 'qty', 'sl', 'soluong']);
-      const detectedReorder = findColumnIndex(headerIndex, ['reorderLevel', 'reorder', 'nguongnhaplai', 'threshold']);
-      const detectedMethod = findColumnIndex(headerIndex, ['costTrackingMethod', 'costtracking', 'method']);
-
-      const hasHeader = detectedName >= 0 || detectedUnit >= 0 || detectedStock >= 0;
-      const dataRows = hasHeader ? rows.slice(1) : rows;
-
-      const nameIndex = hasHeader ? detectedName : 0;
-      const unitIndex = hasHeader ? detectedUnit : 1;
-      const stockIndex = hasHeader ? detectedStock : 2;
-      const reorderIndex = hasHeader ? detectedReorder : 3;
-      const methodIndex = hasHeader ? detectedMethod : 4;
-
-      let imported = 0;
-      let skipped = 0;
-      const errors: string[] = [];
-
-      for (let i = 0; i < dataRows.length; i++) {
-        const row = dataRows[i];
-        const lineNo = hasHeader ? i + 2 : i + 1;
-        if (!row || row.every(cell => !cell.trim())) {
-          continue;
-        }
-
-        const name = nameIndex >= 0 ? (row[nameIndex] || '').trim() : '';
-        const unitRaw = unitIndex >= 0 ? (row[unitIndex] || '').trim().toLowerCase() : '';
-        const stockRaw = stockIndex >= 0 ? (row[stockIndex] || '').trim() : '';
-        const reorderRaw = reorderIndex >= 0 ? (row[reorderIndex] || '').trim() : '';
-        const method = methodIndex >= 0 ? (row[methodIndex] || '').trim() : '';
-
-        if (!name || !unitRaw || !stockRaw) {
-          skipped++;
-          errors.push(`Line ${lineNo}: missing required data`);
-          continue;
-        }
-
-        if (!['g', 'ml', 'pcs'].includes(unitRaw)) {
-          skipped++;
-          errors.push(`Line ${lineNo}: invalid unit "${unitRaw}"`);
-          continue;
-        }
-
-        const currentStock = parseFlexibleNumber(stockRaw);
-        const reorderLevel = reorderRaw ? parseFlexibleNumber(reorderRaw) : 0;
-        if (!Number.isFinite(currentStock) || currentStock < 0 || !Number.isFinite(reorderLevel) || reorderLevel < 0) {
-          skipped++;
-          errors.push(`Line ${lineNo}: invalid numeric value`);
-          continue;
-        }
-
+      for (const payload of analysis.rows) {
         try {
-          await api.createIngredient({
-            name,
-            unit: unitRaw as 'g' | 'ml' | 'pcs',
-            currentStock,
-            reorderLevel,
-            costTrackingMethod: method || 'AVG_BIN'
-          });
+          const normalizedCode = normalizeIngredientCode(payload.ingredientCode || '');
+          let target = normalizedCode ? existingByCode.get(normalizedCode) : undefined;
+
+          if (!target) {
+            target = existingByNameUnit.get(normalizeIngredientKey(payload.name, payload.unit));
+          }
+
+          if (target && target.unit !== payload.unit) {
+            errors.push(`Ingredient "${payload.name}": unit mismatch with existing ingredient ${target.unit}`);
+            continue;
+          }
+
+          if (!target) {
+            const created = await api.createIngredient({
+              name: payload.name,
+              ingredientCode: normalizedCode || undefined,
+              unit: payload.unit,
+              currentStock: 0,
+              reorderLevel: payload.reorderLevel,
+              costTrackingMethod: 'AVG_BIN'
+            });
+            target = created;
+            if (created.ingredientCode && created.ingredientCode.trim()) {
+              existingByCode.set(normalizeIngredientCode(created.ingredientCode), created);
+            }
+            existingByNameUnit.set(normalizeIngredientKey(created.name, created.unit), created);
+          }
+
+          if (payload.currentStock > 0 && payload.totalCost != null) {
+            await api.adjustIngredientStock(target.id, {
+              type: 'IN',
+              qty: payload.currentStock,
+              inputUnit: payload.unit,
+              totalCost: payload.totalCost,
+              note: 'Bulk import initial stock'
+            });
+          }
           imported++;
         } catch (err) {
-          skipped++;
           const message = err instanceof Error ? err.message : 'Failed';
-          errors.push(`Line ${lineNo}: ${message}`);
+          errors.push(`Ingredient "${payload.name}": ${message}`);
         }
       }
 
       const previewErrors = errors.slice(0, 5).join(' | ');
       setImportResult(
-        `${t('admin.ingredients.bulkImportResult')}: imported=${imported}, skipped=${skipped}${previewErrors ? ` (${previewErrors})` : ''}`
+        `${t('admin.ingredients.bulkImportResult')}: imported=${imported}, skipped=${errors.length}${previewErrors ? ` (${previewErrors})` : ''}`
       );
+      setImportPreview(null);
       await loadAll();
     } catch (err) {
       setImportResult(err instanceof Error ? err.message : t('admin.ingredients.bulkImportFailed'));
@@ -344,7 +584,7 @@ export default function AdminIngredientsPage() {
             <div className="mb-3 flex flex-wrap justify-between gap-2">
               <p className="text-sm text-muted">{t('admin.ingredients.help')}</p>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setImportOpen(true)}>
+                <Button variant="outline" onClick={openBulkImportModal}>
                   {t('admin.ingredients.bulkImport')}
                 </Button>
                 <Button onClick={openCreate}>{t('admin.ingredients.add')}</Button>
@@ -513,8 +753,15 @@ export default function AdminIngredientsPage() {
                     ))}
                   </Select>
                 </FormField>
-                <FormField label={t('admin.ingredients.unitCost')}>
-                  <Input type="number" min="0" step="0.0001" value={restockCost} onChange={e => setRestockCost(e.target.value)} />
+                <FormField label={t('admin.ingredients.totalCost')}>
+                  <Input
+                    type="number"
+                    min="0.0001"
+                    step="0.0001"
+                    value={restockTotalCost}
+                    onChange={e => setRestockTotalCost(e.target.value)}
+                    required
+                  />
                 </FormField>
                 <FormField label={t('admin.ingredients.restockNote')}>
                   <Input value={restockNote} onChange={e => setRestockNote(e.target.value)} />
@@ -530,19 +777,143 @@ export default function AdminIngredientsPage() {
                 <DialogTitle>{t('admin.ingredients.bulkImportTitle')}</DialogTitle>
               </DialogHeader>
               <div className="space-y-3">
+                <div className="rounded-xl border border-border bg-[#f8f1e8] p-3">
+                  <p className="text-sm font-semibold">{t('admin.ingredients.bulkImportGuideTitle')}</p>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-muted">
+                    <li>{t('admin.ingredients.bulkImportGuideRequired')}</li>
+                    <li>{t('admin.ingredients.bulkImportGuideOptional')}</li>
+                    <li>{t('admin.ingredients.bulkImportGuideNoHeader')}</li>
+                    <li>{t('admin.ingredients.bulkImportGuideUnitRule')}</li>
+                    <li>{t('admin.ingredients.bulkImportGuideDerived')}</li>
+                  </ul>
+                </div>
                 <p className="text-sm text-muted">{t('admin.ingredients.bulkImportHint')}</p>
                 <div className="flex gap-2">
-                  <Button type="button" variant="outline" onClick={downloadTemplate}>
+                  <Button type="button" variant="outline" onClick={() => void downloadTemplate()}>
                     {t('admin.ingredients.bulkImportTemplate')}
                   </Button>
+                  <Button type="button" variant="outline" onClick={validateBulkImport} disabled={importing}>
+                    {t('admin.ingredients.bulkImportValidate')}
+                  </Button>
                 </div>
-                <FormField label={t('admin.ingredients.bulkImportInput')}>
-                  <textarea
-                    className="min-h-56 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent/40"
-                    value={importText}
-                    onChange={e => setImportText(e.target.value)}
+                <FormField label="Excel (.xlsx)">
+                  <Input
+                    type="file"
+                    accept=".xlsx"
+                    onChange={e => {
+                      const file = e.target.files?.[0];
+                      if (!file) {
+                        return;
+                      }
+                      void readWorkbookImportSheet(file).catch(err => {
+                        setImportResult(err instanceof Error ? err.message : t('admin.ingredients.bulkImportFailed'));
+                      });
+                    }}
                   />
                 </FormField>
+                {importWorkbookName ? <p className="text-xs text-muted">Workbook: {importWorkbookName}</p> : null}
+                {rawPreviewRows.length > 0 ? (
+                  <div className="space-y-2">
+                    <p className="text-sm font-semibold">Xem trước dữ liệu import</p>
+                    <div className="max-h-72 overflow-auto rounded-lg border border-border bg-white">
+                      <Table className="min-w-max border-separate border-spacing-0 text-left">
+                        <TableHeader className="sticky top-0 z-10 bg-[#f8f1e8]">
+                          <TableRow>
+                            {rawPreviewRows[0].map((header, index) => (
+                              <TableHead key={`raw-head-${index}`} className="whitespace-nowrap border-b border-border/70 border-r border-border/40">
+                                {header || `column_${index + 1}`}
+                              </TableHead>
+                            ))}
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {rawPreviewRows.slice(1, 31).map((row, rowIndex) => (
+                            <TableRow key={`raw-row-${rowIndex}`}>
+                              {rawPreviewRows[0].map((_, columnIndex) => {
+                                const value = row[columnIndex] ?? '';
+                                return (
+                                  <TableCell key={`raw-cell-${rowIndex}-${columnIndex}`} className="whitespace-nowrap border-b border-border/50 border-r border-border/30">
+                                    {value ? value : <span className="text-muted">-</span>}
+                                  </TableCell>
+                                );
+                              })}
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    {rawPreviewRows.length > 31 ? <p className="text-xs text-muted">Hiển thị 30 dòng đầu tiên.</p> : null}
+                  </div>
+                ) : null}
+                {importPreview ? (
+                  <div className="space-y-2 rounded-xl border border-border bg-[#f8f1e8] p-3">
+                    <p className="text-sm font-semibold">
+                      {t('admin.ingredients.bulkImportPreview', {
+                        total: importPreview.totalRows,
+                        valid: importPreview.rows.length,
+                        invalid: importPreview.errors.length
+                      })}
+                    </p>
+                    {importPreview.rows.length > 0 ? (
+                      <div className="max-h-72 overflow-auto rounded-lg border border-border bg-white">
+                        <Table className="min-w-max w-full border-separate border-spacing-0">
+                          <TableHeader className="sticky top-0 z-10 bg-[#f8f1e8]">
+                            <TableRow>
+                              <TableHead className="whitespace-nowrap border-b border-border/70 border-r border-border/40">Code</TableHead>
+                              <TableHead className="whitespace-nowrap border-b border-border/70 border-r border-border/40">
+                                {t('admin.ingredients.name')}
+                              </TableHead>
+                              <TableHead className="whitespace-nowrap border-b border-border/70 border-r border-border/40">
+                                {t('admin.ingredients.unit')}
+                              </TableHead>
+                              <TableHead className="whitespace-nowrap border-b border-border/70 border-r border-border/40">
+                                {t('admin.ingredients.currentStock')}
+                              </TableHead>
+                              <TableHead className="whitespace-nowrap border-b border-border/70 border-r border-border/40">
+                                {t('admin.ingredients.totalCost')}
+                              </TableHead>
+                              <TableHead className="whitespace-nowrap border-b border-border/70">{t('admin.ingredients.reorderLevel')}</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {importPreview.rows.slice(0, 10).map((row, index) => (
+                              <TableRow key={`${row.name}-${index}`}>
+                                <TableCell className="whitespace-nowrap font-mono text-xs border-b border-border/50 border-r border-border/30">
+                                  {row.ingredientCode || '-'}
+                                </TableCell>
+                                <TableCell className="whitespace-nowrap border-b border-border/50 border-r border-border/30" title={row.name}>
+                                  {row.name}
+                                </TableCell>
+                                <TableCell className="whitespace-nowrap uppercase border-b border-border/50 border-r border-border/30">
+                                  {row.unit}
+                                </TableCell>
+                                <TableCell className="whitespace-nowrap tabular-nums border-b border-border/50 border-r border-border/30">
+                                  {row.currentStock}
+                                </TableCell>
+                                <TableCell className="whitespace-nowrap tabular-nums border-b border-border/50 border-r border-border/30">
+                                  {row.totalCost ?? '-'}
+                                </TableCell>
+                                <TableCell className="whitespace-nowrap tabular-nums border-b border-border/50">{row.reorderLevel}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted">{t('admin.ingredients.bulkImportNoValidRowsPreview')}</p>
+                    )}
+                    {importPreview.errors.length > 0 ? (
+                      <div>
+                        <p className="mb-1 text-xs font-semibold text-red-700">{t('admin.ingredients.bulkImportErrorPreview')}</p>
+                        <ul className="list-disc space-y-1 pl-5 text-xs text-red-700">
+                          {importPreview.errors.slice(0, 8).map(message => (
+                            <li key={message}>{message}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
                 {importResult ? <p className="text-sm text-muted">{importResult}</p> : null}
                 <Button type="button" onClick={importBulk} disabled={importing}>
                   {importing ? t('admin.ingredients.bulkImportRunning') : t('admin.ingredients.bulkImportRun')}

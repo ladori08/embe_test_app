@@ -177,6 +177,13 @@ public class ProductService {
         productStockLogRepository.save(log);
     }
 
+    public void updateCost(String productId, BigDecimal cost) {
+        Product product = getEntity(productId);
+        product.setCost(cost == null ? BigDecimal.ZERO : cost);
+        product.setUpdatedAt(Instant.now());
+        productRepository.save(product);
+    }
+
     public Product getEntity(String id) {
         return productRepository.findById(id)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Product not found"));

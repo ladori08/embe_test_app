@@ -11,12 +11,21 @@ public class StockLotAllocation {
     @Field(targetType = FieldType.DECIMAL128)
     private BigDecimal qty;
 
+    @Field(targetType = FieldType.DECIMAL128)
+    private BigDecimal unitCost;
+
     public StockLotAllocation() {
     }
 
     public StockLotAllocation(String lotCode, BigDecimal qty) {
         this.lotCode = lotCode;
         this.qty = qty;
+    }
+
+    public StockLotAllocation(String lotCode, BigDecimal qty, BigDecimal unitCost) {
+        this.lotCode = lotCode;
+        this.qty = qty;
+        this.unitCost = unitCost;
     }
 
     public String getLotCode() {
@@ -33,5 +42,13 @@ public class StockLotAllocation {
 
     public void setQty(BigDecimal qty) {
         this.qty = qty;
+    }
+
+    public BigDecimal getUnitCost() {
+        return unitCost;
+    }
+
+    public void setUnitCost(BigDecimal unitCost) {
+        this.unitCost = unitCost;
     }
 }

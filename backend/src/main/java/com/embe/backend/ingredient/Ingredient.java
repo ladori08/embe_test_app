@@ -18,6 +18,9 @@ public class Ingredient {
     @Indexed(unique = true)
     private String name;
 
+    @Indexed(unique = true, sparse = true)
+    private String ingredientCode;
+
     private String unit;
 
     @Field(targetType = FieldType.DECIMAL128)
@@ -54,6 +57,14 @@ public class Ingredient {
 
     public void setUnit(String unit) {
         this.unit = unit;
+    }
+
+    public String getIngredientCode() {
+        return ingredientCode;
+    }
+
+    public void setIngredientCode(String ingredientCode) {
+        this.ingredientCode = ingredientCode;
     }
 
     public BigDecimal getCurrentStock() {
