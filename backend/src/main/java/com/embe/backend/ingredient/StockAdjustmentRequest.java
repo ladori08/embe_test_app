@@ -14,7 +14,7 @@ public record StockAdjustmentRequest(
         BigDecimal qty,
         @Pattern(regexp = "^(g|kg|ml|l|pcs)?$", message = "Input unit must be g, kg, ml, l, or pcs")
         String inputUnit,
-        BigDecimal unitCost,
+        BigDecimal totalCost,
         String note
 ) {
 }

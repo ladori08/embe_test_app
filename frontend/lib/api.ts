@@ -82,7 +82,16 @@ export const api = {
   listIngredients: () => request<Ingredient[]>('/api/admin/ingredients'),
   createIngredient: (payload: Partial<Ingredient>) => request<Ingredient>('/api/admin/ingredients', { method: 'POST', body: JSON.stringify(payload) }),
   updateIngredient: (id: string, payload: Partial<Ingredient>) => request<Ingredient>(`/api/admin/ingredients/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
-  adjustIngredientStock: (id: string, payload: { type: 'IN' | 'OUT'; qty: number; inputUnit?: 'g' | 'kg' | 'ml' | 'l' | 'pcs'; unitCost?: number; note?: string }) =>
+  adjustIngredientStock: (
+    id: string,
+    payload: {
+      type: 'IN' | 'OUT';
+      qty: number;
+      inputUnit?: 'g' | 'kg' | 'ml' | 'l' | 'pcs';
+      totalCost?: number;
+      note?: string;
+    }
+  ) =>
     request<Ingredient>(`/api/admin/ingredients/${id}/stock-adjustments`, { method: 'POST', body: JSON.stringify(payload) }),
   listIngredientTransactions: (params: { ingredientId?: string; type?: 'IN' | 'OUT'; q?: string; from?: string; to?: string; limit?: number } = {}) => {
     const search = new URLSearchParams();

@@ -13,6 +13,8 @@ public record BakeResponse(
         List<BakeAppliedItem> appliedItems,
         BigDecimal factor,
         BigDecimal producedQty,
+        BigDecimal totalIngredientCost,
+        BigDecimal producedUnitCost,
         List<BakeDeduction> deductions,
         Instant createdAt,
         String createdBy

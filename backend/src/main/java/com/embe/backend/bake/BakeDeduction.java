@@ -14,6 +14,10 @@ public class BakeDeduction {
 
     @Field(targetType = FieldType.DECIMAL128)
     private BigDecimal qty;
+
+    @Field(targetType = FieldType.DECIMAL128)
+    private BigDecimal cost;
+
     private List<StockLotAllocation> lotAllocations;
 
     public String getIngredientId() {
@@ -46,6 +50,14 @@ public class BakeDeduction {
 
     public void setQty(BigDecimal qty) {
         this.qty = qty;
+    }
+
+    public BigDecimal getCost() {
+        return cost;
+    }
+
+    public void setCost(BigDecimal cost) {
+        this.cost = cost;
     }
 
     public List<StockLotAllocation> getLotAllocations() {

@@ -22,10 +22,12 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.math.BigDecimal;
+import java.text.Normalizer;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -38,6 +40,10 @@ public class IngredientService {
     private static final BigDecimal UNIT_SCALE = new BigDecimal("1000");
     private static final int DEFAULT_TX_LIMIT = 300;
     private static final int MAX_TX_LIMIT = 1000;
+    private static final int INGREDIENT_CODE_PREFIX_LENGTH = 4;
+    private static final int INGREDIENT_CODE_SEQUENCE_DIGITS = 5;
+    private static final int INGREDIENT_CODE_MAX_RETRIES = 1000;
+    private static final String INGREDIENT_CODE_FALLBACK_PREFIX = "INGR";
 
     private final IngredientRepository ingredientRepository;
     private final StockTransactionRepository stockTransactionRepository;
@@ -69,41 +75,36 @@ public class IngredientService {
     }
 
     public List<IngredientResponse> list() {
-        return ingredientRepository.findAll().stream()
+        List<Ingredient> ingredients = ingredientRepository.findAll();
+        ingredients.forEach(this::ensureIngredientCode);
+        return ingredients.stream()
                 .sorted(Comparator.comparing(Ingredient::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
                 .map(this::toResponse)
                 .toList();
     }
 
     public IngredientResponse get(String id) {
-        return toResponse(getEntity(id));
+        Ingredient ingredient = getEntity(id);
+        ensureIngredientCode(ingredient);
+        return toResponse(ingredient);
     }
 
     public IngredientResponse create(IngredientRequest request) {
         ingredientRepository.findByNameIgnoreCase(request.name()).ifPresent(existing -> {
             throw new ApiException(HttpStatus.CONFLICT, "Ingredient name already exists");
         });
+        if (request.currentStock() != null && request.currentStock().compareTo(BigDecimal.ZERO) > 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Create ingredient with zero stock, then use stock-in with total cost");
+        }
 
         Ingredient ingredient = new Ingredient();
         apply(ingredient, request);
+        ingredient.setIngredientCode(resolveIngredientCodeForCreate(request.ingredientCode(), request.name()));
         Instant now = Instant.now();
         ingredient.setCreatedAt(now);
         ingredient.setUpdatedAt(now);
 
         Ingredient saved = ingredientRepository.save(ingredient);
-        if (saved.getCurrentStock().compareTo(BigDecimal.ZERO) > 0) {
-            recordStockTransaction(
-                    saved.getId(),
-                    saved.getName(),
-                    StockTransactionType.IN,
-                    saved.getCurrentStock(),
-                    saved.getUnit(),
-                    null,
-                    "Initial stock",
-                    currentUser(),
-                    List.of()
-            );
-        }
         IngredientResponse response = toResponse(saved);
         auditLogService.record(
                 AuditModule.INGREDIENT,
@@ -112,7 +113,7 @@ public class IngredientService {
                 response.id(),
                 null,
                 response,
-                java.util.Map.of("unit", response.unit())
+                java.util.Map.of("unit", response.unit(), "ingredientCode", response.ingredientCode())
         );
         return response;
     }
@@ -127,6 +128,17 @@ public class IngredientService {
                 });
 
         apply(ingredient, request);
+        String requestedCode = normalizeIngredientCode(request.ingredientCode());
+        if (!requestedCode.isBlank()) {
+            ingredientRepository.findByIngredientCodeIgnoreCase(requestedCode)
+                    .filter(existing -> !existing.getId().equals(id))
+                    .ifPresent(existing -> {
+                        throw new ApiException(HttpStatus.CONFLICT, "Ingredient code already exists");
+                    });
+            ingredient.setIngredientCode(requestedCode);
+        } else if (ingredient.getIngredientCode() == null || ingredient.getIngredientCode().isBlank()) {
+            ingredient.setIngredientCode(generateUniqueIngredientCode(ingredient.getName()));
+        }
         ingredient.setUpdatedAt(Instant.now());
         IngredientResponse after = toResponse(ingredientRepository.save(ingredient));
         auditLogService.record(
@@ -136,7 +148,7 @@ public class IngredientService {
                 after.id(),
                 before,
                 after,
-                java.util.Map.of("unit", after.unit())
+                java.util.Map.of("unit", after.unit(), "ingredientCode", after.ingredientCode())
         );
         return after;
     }
@@ -164,6 +176,16 @@ public class IngredientService {
         Ingredient ingredient = getEntity(id);
         String inputUnit = resolveInputUnit(ingredient.getUnit(), request.inputUnit());
         BigDecimal qtyBase = toBaseQty(ingredient.getUnit(), inputUnit, request.qty());
+        BigDecimal unitCostBase = null;
+        BigDecimal totalCostInput = null;
+        if (request.type() == StockTransactionType.IN) {
+            if (request.totalCost() != null && request.totalCost().compareTo(BigDecimal.ZERO) > 0) {
+                totalCostInput = request.totalCost();
+            } else {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Total cost is required and must be greater than 0 for stock-in");
+            }
+            unitCostBase = toBaseUnitCostFromTotal(qtyBase, totalCostInput);
+        }
         boolean ok;
         if (request.type() == StockTransactionType.IN) {
             inventoryMutationService.addIngredient(id, qtyBase);
@@ -186,7 +208,7 @@ public class IngredientService {
                 request.type(),
                 qtyBase,
                 inputUnit,
-                request.unitCost(),
+                unitCostBase,
                 request.note(),
                 currentUser(),
                 allocations
@@ -197,6 +219,8 @@ public class IngredientService {
         metadata.put("inputQty", request.qty());
         metadata.put("inputUnit", inputUnit);
         metadata.put("qtyBase", qtyBase);
+        metadata.put("totalCostInput", totalCostInput);
+        metadata.put("unitCostBase", unitCostBase);
         metadata.put("note", request.note() == null ? "" : request.note());
         if (!allocations.isEmpty()) {
             metadata.put("allocations", allocations);
@@ -298,7 +322,8 @@ public class IngredientService {
                 }
                 if (first) {
                     first = false;
-                    if (line.toLowerCase().contains("name") && line.toLowerCase().contains("unit")) {
+                    String headerLine = line.toLowerCase();
+                    if (headerLine.contains("name") && headerLine.contains("unit")) {
                         continue;
                     }
                 }
@@ -322,12 +347,26 @@ public class IngredientService {
                     skipped++;
                     continue;
                 }
-                BigDecimal reorder = parts.length > 3 && !parts[3].trim().isEmpty() ? new BigDecimal(parts[3].trim()) : BigDecimal.ZERO;
+                BigDecimal totalCost = null;
+                if (parts.length > 3 && !parts[3].trim().isEmpty()) {
+                    try {
+                        totalCost = new BigDecimal(parts[3].trim());
+                    } catch (NumberFormatException e) {
+                        skipped++;
+                        continue;
+                    }
+                }
+                if (stock.compareTo(BigDecimal.ZERO) > 0 && (totalCost == null || totalCost.compareTo(BigDecimal.ZERO) <= 0)) {
+                    skipped++;
+                    continue;
+                }
+                BigDecimal reorder = parts.length > 4 && !parts[4].trim().isEmpty() ? new BigDecimal(parts[4].trim()) : BigDecimal.ZERO;
 
                 Ingredient ingredient = new Ingredient();
                 ingredient.setName(name);
+                ingredient.setIngredientCode(generateUniqueIngredientCode(name));
                 ingredient.setUnit(unit);
-                ingredient.setCurrentStock(stock);
+                ingredient.setCurrentStock(BigDecimal.ZERO);
                 ingredient.setReorderLevel(reorder);
                 ingredient.setCostTrackingMethod("AVG_BIN");
                 Instant now = Instant.now();
@@ -337,13 +376,14 @@ public class IngredientService {
                 imported++;
 
                 if (stock.compareTo(BigDecimal.ZERO) > 0) {
+                    inventoryMutationService.addIngredient(saved.getId(), stock);
                     recordStockTransaction(
                             saved.getId(),
                             saved.getName(),
                             StockTransactionType.IN,
                             stock,
                             saved.getUnit(),
-                            null,
+                            toBaseUnitCostFromTotal(stock, totalCost),
                             "CSV initial stock",
                             currentUser(),
                             List.of()
@@ -427,12 +467,12 @@ public class IngredientService {
             }
             stockTransactionRepository.save(lot);
 
-            allocations.add(new StockLotAllocation(lot.getLotCode(), deducted));
+            allocations.add(new StockLotAllocation(lot.getLotCode(), deducted, lot.getUnitCost()));
             remaining = remaining.subtract(deducted);
         }
 
         if (remaining.compareTo(BigDecimal.ZERO) > 0) {
-            allocations.add(new StockLotAllocation("LEGACY-STOCK", remaining));
+            allocations.add(new StockLotAllocation("LEGACY-STOCK", remaining, null));
         }
 
         return allocations;
@@ -450,6 +490,7 @@ public class IngredientService {
         return new IngredientResponse(
                 ingredient.getId(),
                 ingredient.getName(),
+                ingredient.getIngredientCode(),
                 ingredient.getUnit(),
                 ingredient.getCurrentStock(),
                 ingredient.getReorderLevel(),
@@ -480,6 +521,116 @@ public class IngredientService {
             return qty.multiply(UNIT_SCALE);
         }
         return qty;
+    }
+
+    private BigDecimal toBaseUnitCostFromTotal(BigDecimal qtyBase, BigDecimal totalCost) {
+        if (totalCost == null) {
+            return null;
+        }
+        if (qtyBase == null || qtyBase.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Qty must be greater than 0");
+        }
+        return totalCost.divide(qtyBase, 12, java.math.RoundingMode.HALF_UP);
+    }
+
+    private void ensureIngredientCode(Ingredient ingredient) {
+        if (ingredient.getIngredientCode() != null && !ingredient.getIngredientCode().isBlank()) {
+            return;
+        }
+        ingredient.setIngredientCode(generateUniqueIngredientCode(ingredient.getName()));
+        ingredient.setUpdatedAt(Instant.now());
+        ingredientRepository.save(ingredient);
+    }
+
+    private String resolveIngredientCodeForCreate(String requestedCode, String ingredientName) {
+        String normalized = normalizeIngredientCode(requestedCode);
+        if (!normalized.isBlank()) {
+            ingredientRepository.findByIngredientCodeIgnoreCase(normalized).ifPresent(existing -> {
+                throw new ApiException(HttpStatus.CONFLICT, "Ingredient code already exists");
+            });
+            return normalized;
+        }
+        return generateUniqueIngredientCode(ingredientName);
+    }
+
+    private String normalizeIngredientCode(String code) {
+        if (code == null) {
+            return "";
+        }
+        String normalized = code.trim().toUpperCase(Locale.ROOT);
+        if (normalized.isBlank() || "0".equals(normalized) || "0.0".equals(normalized) || "0,0".equals(normalized)) {
+            return "";
+        }
+        return normalized;
+    }
+
+    private String generateUniqueIngredientCode(String ingredientName) {
+        String prefix = buildIngredientCodePrefix(ingredientName);
+        int initialSequence = nextIngredientSequenceForPrefix(prefix);
+        for (int attempt = 0; attempt < INGREDIENT_CODE_MAX_RETRIES; attempt++) {
+            String candidate = formatIngredientCode(prefix, initialSequence + attempt);
+            if (ingredientRepository.findByIngredientCodeIgnoreCase(candidate).isEmpty()) {
+                return candidate;
+            }
+        }
+        throw new ApiException(HttpStatus.CONFLICT, "Unable to generate unique ingredient code");
+    }
+
+    private String buildIngredientCodePrefix(String ingredientName) {
+        String normalized = Normalizer.normalize(ingredientName == null ? "" : ingredientName, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "")
+                .replace("Đ", "D")
+                .replace("đ", "d")
+                .toUpperCase(Locale.ROOT);
+
+        List<String> words = java.util.Arrays.stream(normalized.split("[^A-Z0-9]+"))
+                .filter(part -> !part.isBlank())
+                .toList();
+
+        if (words.isEmpty()) {
+            return INGREDIENT_CODE_FALLBACK_PREFIX;
+        }
+
+        String initials = words.stream()
+                .filter(word -> !word.isBlank())
+                .map(word -> word.substring(0, 1))
+                .reduce("", String::concat);
+        String remainder = words.stream()
+                .map(word -> word.length() > 1 ? word.substring(1) : "")
+                .reduce("", String::concat);
+
+        String candidate = (initials + remainder).replaceAll("[^A-Z0-9]", "");
+        if (candidate.isBlank()) {
+            candidate = words.stream().reduce("", String::concat);
+        }
+        if (candidate.length() < INGREDIENT_CODE_PREFIX_LENGTH) {
+            candidate = candidate + INGREDIENT_CODE_FALLBACK_PREFIX;
+        }
+        return candidate.substring(0, INGREDIENT_CODE_PREFIX_LENGTH);
+    }
+
+    private int nextIngredientSequenceForPrefix(String prefix) {
+        String codePrefix = prefix + "-";
+        return ingredientRepository.findByIngredientCodeStartingWith(codePrefix).stream()
+                .map(Ingredient::getIngredientCode)
+                .mapToInt(code -> extractIngredientSequence(code, codePrefix))
+                .max()
+                .orElse(0) + 1;
+    }
+
+    private int extractIngredientSequence(String ingredientCode, String codePrefix) {
+        if (ingredientCode == null || !ingredientCode.startsWith(codePrefix)) {
+            return 0;
+        }
+        String suffix = ingredientCode.substring(codePrefix.length());
+        if (!suffix.matches("\\d{" + INGREDIENT_CODE_SEQUENCE_DIGITS + "}")) {
+            return 0;
+        }
+        return Integer.parseInt(suffix);
+    }
+
+    private String formatIngredientCode(String prefix, int sequence) {
+        return prefix + "-" + String.format("%0" + INGREDIENT_CODE_SEQUENCE_DIGITS + "d", sequence);
     }
 
     private String resolveInputUnit(String baseUnit, String inputUnit) {

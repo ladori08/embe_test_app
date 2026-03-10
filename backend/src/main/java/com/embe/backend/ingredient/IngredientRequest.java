@@ -9,6 +9,8 @@ import java.math.BigDecimal;
 public record IngredientRequest(
         @NotBlank(message = "Ingredient name is required")
         String name,
+        @Pattern(regexp = "^$|^0$|^[A-Za-z0-9-]{3,20}$", message = "Ingredient code must be 3-20 chars (A-Z, 0-9, -)")
+        String ingredientCode,
         @NotBlank(message = "Unit is required")
         @Pattern(regexp = "^(g|ml|pcs)$", message = "Unit must be g, ml, or pcs")
         String unit,

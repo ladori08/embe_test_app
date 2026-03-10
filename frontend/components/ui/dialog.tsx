@@ -12,16 +12,32 @@ interface DialogProps {
 export function Dialog({ open, onOpenChange, children }: DialogProps) {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={() => onOpenChange(false)}>
-      <div className="w-full max-w-lg" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/30 p-4">
+      <div
+        className="flex min-h-full items-start justify-center py-2 sm:items-center sm:py-4"
+        onClick={event => {
+          if (event.target === event.currentTarget) {
+            onOpenChange(false);
+          }
+        }}
+      >
         {children}
       </div>
     </div>
   );
 }
 
-export function DialogContent({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('rounded-2xl border border-border bg-white p-5 shadow-card', className)} {...props} />;
+export function DialogContent({ className, onClick, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      className={cn('mx-auto w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl border border-border bg-white p-5 shadow-card', className)}
+      onClick={event => {
+        event.stopPropagation();
+        onClick?.(event);
+      }}
+      {...props}
+    />
+  );
 }
 
 export function DialogHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {

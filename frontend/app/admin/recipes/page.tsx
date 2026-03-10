@@ -18,6 +18,11 @@ import { Ingredient, Product, Recipe } from '@/lib/types';
 import { buildHeaderIndex, downloadTextFile, findColumnIndex, normalizeHeaderKey, parseFlexibleNumber, parsePastedRows } from '@/lib/bulk';
 
 type RecipeLineForm = { ingredientId: string; qtyPerBatch: number };
+type RecipeImportAnalysis = {
+  items: { ingredientId: string; qtyPerBatch: number }[];
+  errors: string[];
+  totalRows: number;
+};
 
 const emptyLine = (): RecipeLineForm => ({ ingredientId: '', qtyPerBatch: 0 });
 
@@ -27,6 +32,7 @@ export default function AdminRecipesPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [error, setError] = useState('');
+  const [bulkImportMessage, setBulkImportMessage] = useState('');
 
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
   const [productId, setProductId] = useState('');
@@ -39,6 +45,7 @@ export default function AdminRecipesPage() {
   const [importText, setImportText] = useState('');
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState('');
+  const [importPreview, setImportPreview] = useState<RecipeImportAnalysis | null>(null);
 
   const { t } = useI18n();
 
@@ -48,6 +55,9 @@ export default function AdminRecipesPage() {
     () => new Map(ingredients.map(ingredient => [normalizeHeaderKey(ingredient.name), ingredient])),
     [ingredients]
   );
+  const hasImportPreview = importPreview != null;
+  const hasImportErrors = importPreview != null && importPreview.errors.length > 0;
+  const canRunImport = hasImportPreview && !hasImportErrors && (importPreview?.items.length || 0) > 0 && !importing;
 
   const load = async () => {
     const [recipeResult, productResult, ingredientResult] = await Promise.allSettled([api.listRecipes(), api.listProductsAdmin(), api.listIngredients()]);
@@ -124,7 +134,27 @@ export default function AdminRecipesPage() {
     setImportYieldQty('1');
     setImportText('');
     setImportResult('');
+    setImportPreview(null);
     setImportOpen(true);
+  };
+
+  const clearBulkImportState = () => {
+    setImportText('');
+    setImportResult('');
+    setImportPreview(null);
+    setImportYieldQty('1');
+  };
+
+  const closeBulkImportModal = () => {
+    setImportOpen(false);
+    clearBulkImportState();
+  };
+
+  const handleBulkImportOpenChange = (nextOpen: boolean) => {
+    setImportOpen(nextOpen);
+    if (!nextOpen) {
+      clearBulkImportState();
+    }
   };
 
   const submit = async (e: FormEvent) => {
@@ -166,7 +196,87 @@ export default function AdminRecipesPage() {
     downloadTextFile('recipe-import-template.csv', template);
   };
 
+  const analyzeRecipeImport = (): RecipeImportAnalysis => {
+    const rows = parsePastedRows(importText);
+    if (rows.length === 0) {
+      throw new Error(t('admin.recipes.bulkImportEmpty'));
+    }
+
+    const headerIndex = buildHeaderIndex(rows[0]);
+    const detectedName = findColumnIndex(headerIndex, ['ingredientName', 'ingredient', 'name', 'ten', 'nguyenlieu']);
+    const detectedQty = findColumnIndex(headerIndex, ['qtyPerBatch', 'qty', 'quantity', 'sl', 'soluong']);
+    const hasHeader = detectedName >= 0 || detectedQty >= 0;
+
+    const dataRows = hasHeader ? rows.slice(1) : rows;
+    const nameIndex = hasHeader ? detectedName : 0;
+    const qtyIndex = hasHeader ? detectedQty : 1;
+
+    const aggregated = new Map<string, number>();
+    const rowErrors: string[] = [];
+    let totalRows = 0;
+
+    for (let i = 0; i < dataRows.length; i++) {
+      const row = dataRows[i];
+      const lineNo = hasHeader ? i + 2 : i + 1;
+      if (!row || row.every(cell => !cell.trim())) {
+        continue;
+      }
+      totalRows++;
+
+      const ingredientName = nameIndex >= 0 ? (row[nameIndex] || '').trim() : '';
+      const qtyRaw = qtyIndex >= 0 ? (row[qtyIndex] || '').trim() : '';
+
+      if (!ingredientName || !qtyRaw) {
+        rowErrors.push(`Line ${lineNo}: missing ingredient or quantity`);
+        continue;
+      }
+
+      const ingredient = ingredientByName.get(normalizeHeaderKey(ingredientName));
+      if (!ingredient) {
+        rowErrors.push(`Line ${lineNo}: ingredient not found "${ingredientName}"`);
+        continue;
+      }
+
+      const qty = parseFlexibleNumber(qtyRaw);
+      if (!Number.isFinite(qty) || qty <= 0) {
+        rowErrors.push(`Line ${lineNo}: invalid quantity "${qtyRaw}"`);
+        continue;
+      }
+
+      aggregated.set(ingredient.id, (aggregated.get(ingredient.id) || 0) + qty);
+    }
+
+    if (totalRows === 0) {
+      throw new Error(t('admin.recipes.bulkImportEmpty'));
+    }
+
+    const items = [...aggregated.entries()].map(([ingredientId, qtyPerBatch]) => ({ ingredientId, qtyPerBatch }));
+    return {
+      items,
+      errors: rowErrors,
+      totalRows
+    };
+  };
+
+  const validateBulkImport = () => {
+    try {
+      const analysis = analyzeRecipeImport();
+      setImportPreview(analysis);
+      const previewErrors = analysis.errors.slice(0, 5).join(' | ');
+      setImportResult(
+        `${t('admin.recipes.bulkImportPreview', {
+          total: analysis.totalRows,
+          valid: analysis.items.length,
+          invalid: analysis.errors.length
+        })}${previewErrors ? ` (${previewErrors})` : ''}`
+      );
+    } catch (err) {
+      setImportResult(err instanceof Error ? err.message : t('admin.recipes.failed'));
+    }
+  };
+
   const runBulkImport = async () => {
+    setBulkImportMessage('');
     if (!importProductId) {
       setImportResult(t('admin.recipes.noProducts'));
       return;
@@ -180,54 +290,18 @@ export default function AdminRecipesPage() {
 
     setImporting(true);
     try {
-      const rows = parsePastedRows(importText);
-      if (rows.length === 0) {
-        throw new Error(t('admin.recipes.bulkImportEmpty'));
+      const analysis = importPreview ?? analyzeRecipeImport();
+      const rowErrors = [...analysis.errors];
+      if (rowErrors.length > 0) {
+        setImportPreview(analysis);
+        setImportResult(
+          t('admin.recipes.bulkImportBlockedByErrors', {
+            count: rowErrors.length
+          })
+        );
+        return;
       }
-
-      const headerIndex = buildHeaderIndex(rows[0]);
-      const detectedName = findColumnIndex(headerIndex, ['ingredientName', 'ingredient', 'name', 'ten', 'nguyenlieu']);
-      const detectedQty = findColumnIndex(headerIndex, ['qtyPerBatch', 'qty', 'quantity', 'sl', 'soluong']);
-      const hasHeader = detectedName >= 0 || detectedQty >= 0;
-
-      const dataRows = hasHeader ? rows.slice(1) : rows;
-      const nameIndex = hasHeader ? detectedName : 0;
-      const qtyIndex = hasHeader ? detectedQty : 1;
-
-      const aggregated = new Map<string, number>();
-      const rowErrors: string[] = [];
-
-      for (let i = 0; i < dataRows.length; i++) {
-        const row = dataRows[i];
-        const lineNo = hasHeader ? i + 2 : i + 1;
-        if (!row || row.every(cell => !cell.trim())) {
-          continue;
-        }
-
-        const ingredientName = nameIndex >= 0 ? (row[nameIndex] || '').trim() : '';
-        const qtyRaw = qtyIndex >= 0 ? (row[qtyIndex] || '').trim() : '';
-
-        if (!ingredientName || !qtyRaw) {
-          rowErrors.push(`Line ${lineNo}: missing ingredient or quantity`);
-          continue;
-        }
-
-        const ingredient = ingredientByName.get(normalizeHeaderKey(ingredientName));
-        if (!ingredient) {
-          rowErrors.push(`Line ${lineNo}: ingredient not found "${ingredientName}"`);
-          continue;
-        }
-
-        const qty = parseFlexibleNumber(qtyRaw);
-        if (!Number.isFinite(qty) || qty <= 0) {
-          rowErrors.push(`Line ${lineNo}: invalid quantity "${qtyRaw}"`);
-          continue;
-        }
-
-        aggregated.set(ingredient.id, (aggregated.get(ingredient.id) || 0) + qty);
-      }
-
-      const items = [...aggregated.entries()].map(([ingredientId, qtyPerBatch]) => ({ ingredientId, qtyPerBatch }));
+      const items = analysis.items;
       if (items.length === 0) {
         throw new Error(t('admin.recipes.bulkImportNoValidRows'));
       }
@@ -240,13 +314,13 @@ export default function AdminRecipesPage() {
         await api.createRecipe(payload);
       }
 
-      const previewErrors = rowErrors.slice(0, 5).join(' | ');
-      setImportResult(
-        `${t('admin.recipes.bulkImportResult')}: items=${items.length}${rowErrors.length ? `, skipped=${rowErrors.length}` : ''}${
-          previewErrors ? ` (${previewErrors})` : ''
-        }`
+      setImportPreview(null);
+      setBulkImportMessage(
+        t('admin.recipes.bulkImportSuccessMessage', {
+          count: items.length
+        })
       );
-      setImportOpen(false);
+      closeBulkImportModal();
       await load();
     } catch (err) {
       setImportResult(err instanceof Error ? err.message : t('admin.recipes.failed'));
@@ -262,6 +336,7 @@ export default function AdminRecipesPage() {
         <AdminShell title={t('admin.nav.recipes')}>
           <Card>
             {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
+            {bulkImportMessage ? <p className="mb-3 text-sm text-green-700">{bulkImportMessage}</p> : null}
             <Tabs value={tab} onValueChange={setTab}>
               <TabsList>
                 <TabsTrigger value="list">{t('admin.recipes.tab.list')}</TabsTrigger>
@@ -374,12 +449,21 @@ export default function AdminRecipesPage() {
             </Tabs>
           </Card>
 
-          <Dialog open={importOpen} onOpenChange={setImportOpen}>
+          <Dialog open={importOpen} onOpenChange={handleBulkImportOpenChange}>
             <DialogContent className="max-w-2xl">
               <DialogHeader>
                 <DialogTitle>{t('admin.recipes.bulkImportTitle')}</DialogTitle>
               </DialogHeader>
-              <div className="space-y-3">
+                <div className="space-y-3">
+                <div className="rounded-xl border border-border bg-[#f8f1e8] p-3">
+                  <p className="text-sm font-semibold">{t('admin.recipes.bulkImportGuideTitle')}</p>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-muted">
+                    <li>{t('admin.recipes.bulkImportGuideRequired')}</li>
+                    <li>{t('admin.recipes.bulkImportGuideNoHeader')}</li>
+                    <li>{t('admin.recipes.bulkImportGuideProductYield')}</li>
+                    <li>{t('admin.recipes.bulkImportGuideDerived')}</li>
+                  </ul>
+                </div>
                 <p className="text-sm text-muted">{t('admin.recipes.bulkImportHint')}</p>
                 <FormField label={t('admin.recipes.product')}>
                   <Select value={importProductId} onChange={e => setImportProductId(e.target.value)} disabled={products.length === 0}>
@@ -398,18 +482,71 @@ export default function AdminRecipesPage() {
                   <Button type="button" variant="outline" onClick={downloadImportTemplate}>
                     {t('admin.recipes.bulkImportTemplate')}
                   </Button>
+                  <Button type="button" variant="outline" onClick={validateBulkImport} disabled={importing}>
+                    {t('admin.recipes.bulkImportValidate')}
+                  </Button>
                 </div>
                 <FormField label={t('admin.recipes.bulkImportInput')}>
                   <textarea
                     className="min-h-56 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent/40"
                     value={importText}
-                    onChange={e => setImportText(e.target.value)}
+                    onChange={e => {
+                      setImportText(e.target.value);
+                      setImportPreview(null);
+                      setImportResult('');
+                    }}
                   />
                 </FormField>
+                {importPreview ? (
+                  <div className="space-y-2 rounded-xl border border-border bg-[#f8f1e8] p-3">
+                    <p className="text-sm font-semibold">
+                      {t('admin.recipes.bulkImportPreview', {
+                        total: importPreview.totalRows,
+                        valid: importPreview.items.length,
+                        invalid: importPreview.errors.length
+                      })}
+                    </p>
+                    {importPreview.items.length > 0 ? (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>{t('admin.recipes.ingredients')}</TableHead>
+                            <TableHead>{t('admin.recipes.qty')}</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {importPreview.items.slice(0, 10).map(item => (
+                            <TableRow key={item.ingredientId}>
+                              <TableCell>{ingredientById.get(item.ingredientId)?.name || item.ingredientId}</TableCell>
+                              <TableCell>{item.qtyPerBatch}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    ) : (
+                      <p className="text-xs text-muted">{t('admin.recipes.bulkImportNoValidRowsPreview')}</p>
+                    )}
+                    {importPreview.errors.length > 0 ? (
+                      <div>
+                        <p className="mb-1 text-xs font-semibold text-red-700">{t('admin.recipes.bulkImportErrorPreview')}</p>
+                        <ul className="list-disc space-y-1 pl-5 text-xs text-red-700">
+                          {importPreview.errors.slice(0, 8).map(message => (
+                            <li key={message}>{message}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
                 {importResult ? <p className="text-sm text-muted">{importResult}</p> : null}
-                <Button type="button" onClick={runBulkImport} disabled={importing}>
-                  {importing ? t('admin.recipes.bulkImportRunning') : t('admin.recipes.bulkImportRun')}
-                </Button>
+                <div className="flex justify-end gap-2">
+                  <Button type="button" variant="outline" onClick={closeBulkImportModal} disabled={importing}>
+                    {t('common.cancel')}
+                  </Button>
+                  <Button type="button" onClick={runBulkImport} disabled={!canRunImport}>
+                    {importing ? t('admin.recipes.bulkImportRunning') : t('admin.recipes.bulkImportRun')}
+                  </Button>
+                </div>
               </div>
             </DialogContent>
           </Dialog>

@@ -18,6 +18,7 @@ export interface AdminManagedUser {
 export interface Ingredient {
   id: string;
   name: string;
+  ingredientCode?: string;
   unit: 'g' | 'ml' | 'pcs';
   currentStock: number;
   reorderLevel?: number;
@@ -27,6 +28,7 @@ export interface Ingredient {
 export interface StockLotAllocation {
   lotCode: string;
   qty: number;
+  unitCost?: number | null;
 }
 
 export interface IngredientTransaction {
@@ -93,6 +95,7 @@ export interface BakeDeduction {
   ingredientName?: string;
   unit?: string;
   qty: number;
+  cost?: number;
   lotAllocations?: StockLotAllocation[];
 }
 
@@ -105,6 +108,8 @@ export interface BakeRecord {
   appliedItems?: BakeAppliedItem[];
   factor: number;
   producedQty: number;
+  totalIngredientCost?: number;
+  producedUnitCost?: number;
   deductions?: BakeDeduction[];
   createdAt: string;
 }
