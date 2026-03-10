@@ -37,6 +37,7 @@ type IngredientImportRow = {
   totalCost: number | null;
   reorderLevel: number | null;
   status: IngredientImportRowStatus;
+  statusText: string;
   note: string;
   payload: IngredientImportPayload | null;
 };
@@ -91,12 +92,20 @@ const normalizeIngredientCode = (value: string) => {
   }
   return normalized;
 };
+const normalizeImportUnit = (value: string) => {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'psc') {
+    return 'pcs';
+  }
+  return normalized;
+};
 const normalizeIngredientKey = (name: string, unit: string) => `${name.trim().toLowerCase()}::${unit.trim().toLowerCase()}`;
 
 export default function AdminIngredientsPage() {
   const [items, setItems] = useState<Ingredient[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [bulkImportMessage, setBulkImportMessage] = useState('');
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Ingredient | null>(null);
@@ -312,12 +321,14 @@ export default function AdminIngredientsPage() {
 
     ingredientsSheet.columns = [
       { header: 'ingredientCode', key: 'ingredientCode', width: 18 },
-      { header: 'name', key: 'name', width: 32 }
+      { header: 'name', key: 'name', width: 32 },
+      { header: 'unit', key: 'unit', width: 12 }
     ];
     ingredients.forEach(ingredient => {
       ingredientsSheet.addRow({
         ingredientCode: ingredient.ingredientCode || '',
-        name: ingredient.name
+        name: ingredient.name,
+        unit: ingredient.unit || ''
       });
     });
     ingredientsSheet.views = [{ state: 'frozen', ySplit: 1 }];
@@ -354,13 +365,17 @@ export default function AdminIngredientsPage() {
         };
         nameCell.protection = { locked: false };
       }
-      importSheet.getCell(`C${rowNumber}`).protection = { locked: false };
+      const unitCell = importSheet.getCell(`C${rowNumber}`);
+      unitCell.value = {
+        formula: `IF(B${rowNumber}="","",IFERROR(XLOOKUP(B${rowNumber},Ingredients!$B:$B,Ingredients!$C:$C,""),IFERROR(INDEX(Ingredients!$C:$C,MATCH(B${rowNumber},Ingredients!$B:$B,0)),"")))`,
+        result: ''
+      };
+      unitCell.protection = { locked: false };
       importSheet.getCell(`D${rowNumber}`).protection = { locked: false };
       importSheet.getCell(`E${rowNumber}`).protection = { locked: false };
       importSheet.getCell(`F${rowNumber}`).protection = { locked: false };
     }
 
-    importSheet.getCell('C2').value = 'g';
     importSheet.getCell('D2').value = 0;
     importSheet.getCell('E2').value = 0;
     importSheet.getCell('F2').value = 0;
@@ -434,6 +449,14 @@ export default function AdminIngredientsPage() {
     const stockIndex = hasHeader ? detectedStock : 2;
     const totalCostIndex = hasHeader ? detectedTotalCost : 3;
     const reorderIndex = hasHeader ? detectedReorder : 4;
+    const existingByCode = new Map<string, Ingredient>();
+    const existingByNameUnit = new Map<string, Ingredient>();
+    for (const ingredient of items) {
+      if (ingredient.ingredientCode && ingredient.ingredientCode.trim()) {
+        existingByCode.set(normalizeIngredientCode(ingredient.ingredientCode), ingredient);
+      }
+      existingByNameUnit.set(normalizeIngredientKey(ingredient.name, ingredient.unit), ingredient);
+    }
 
     const previewRows: IngredientImportRow[] = [];
     let totalRows = 0;
@@ -450,36 +473,69 @@ export default function AdminIngredientsPage() {
       const ingredientCode = codeRaw.startsWith('=') ? '' : normalizeIngredientCode(codeRaw);
       const name = nameIndex >= 0 ? (row[nameIndex] || '').trim() : '';
       const unitRaw = unitIndex >= 0 ? (row[unitIndex] || '').trim().toLowerCase() : '';
+      const normalizedUnit = normalizeImportUnit(unitRaw);
       const stockRaw = stockIndex >= 0 ? (row[stockIndex] || '').trim() : '';
       const totalCostRaw = totalCostIndex >= 0 ? (row[totalCostIndex] || '').trim() : '';
       const reorderRaw = reorderIndex >= 0 ? (row[reorderIndex] || '').trim() : '';
       const currentStock = stockRaw ? parseFlexibleNumber(stockRaw) : null;
       const parsedCost = totalCostRaw ? parseFlexibleNumber(totalCostRaw) : null;
       const reorderLevel = reorderRaw ? parseFlexibleNumber(reorderRaw) : 0;
-      const makeRow = (status: IngredientImportRowStatus, note: string, payload: IngredientImportPayload | null): IngredientImportRow => ({
+      const makeRow = (
+        status: IngredientImportRowStatus,
+        note: string,
+        payload: IngredientImportPayload | null,
+        statusText = note
+      ): IngredientImportRow => ({
         lineNo,
         ingredientCode,
         name,
-        unit: unitRaw,
+        unit: normalizedUnit,
         currentStock,
         totalCost: parsedCost,
         reorderLevel,
         status,
+        statusText,
         note,
         payload
       });
 
       if (!name || !unitRaw || !stockRaw) {
-        previewRows.push(makeRow('error', t('admin.ingredients.bulkImportRowMissingRequired'), null));
+        previewRows.push(
+          makeRow(
+            'error',
+            t('admin.ingredients.bulkImportRowMissingRequired', {
+              lineNo
+            }),
+            null
+          )
+        );
         continue;
       }
 
-      if (!['g', 'ml', 'pcs'].includes(unitRaw)) {
-        previewRows.push(makeRow('error', `Line ${lineNo}: invalid unit "${unitRaw}"`, null));
+      if (!['g', 'ml', 'pcs'].includes(normalizedUnit)) {
+        previewRows.push(
+          makeRow(
+            'error',
+            t('admin.ingredients.bulkImportRowInvalidUnit', {
+              lineNo,
+              unit: unitRaw || '-'
+            }),
+            null
+          )
+        );
         continue;
       }
       if (ingredientCode && !/^[A-Z0-9-]{3,20}$/.test(ingredientCode)) {
-        previewRows.push(makeRow('error', `Line ${lineNo}: invalid ingredientCode "${ingredientCode}"`, null));
+        previewRows.push(
+          makeRow(
+            'error',
+            t('admin.ingredients.bulkImportRowInvalidCode', {
+              lineNo,
+              code: ingredientCode
+            }),
+            null
+          )
+        );
         continue;
       }
 
@@ -491,24 +547,50 @@ export default function AdminIngredientsPage() {
         !Number.isFinite(reorderLevel) ||
         reorderLevel < 0
       ) {
-        previewRows.push(makeRow('error', `Line ${lineNo}: invalid numeric value`, null));
+        previewRows.push(
+          makeRow(
+            'error',
+            t('admin.ingredients.bulkImportRowInvalidNumeric', {
+              lineNo
+            }),
+            null
+          )
+        );
         continue;
       }
       const totalCost = currentStock > 0 ? parsedCost : null;
       if (currentStock > 0 && (totalCost == null || !Number.isFinite(totalCost) || totalCost <= 0)) {
-        previewRows.push(makeRow('error', `Line ${lineNo}: totalCost is required when currentStock > 0`, null));
+        previewRows.push(
+          makeRow(
+            'error',
+            t('admin.ingredients.bulkImportRowTotalCostRequired', {
+              lineNo
+            }),
+            null
+          )
+        );
         continue;
       }
 
       const payload: IngredientImportPayload = {
         name,
         ingredientCode,
-        unit: unitRaw as 'g' | 'ml' | 'pcs',
+        unit: normalizedUnit as 'g' | 'ml' | 'pcs',
         currentStock,
         reorderLevel,
         totalCost
       };
-      previewRows.push(makeRow('ready', t('admin.ingredients.bulkImportRowReady'), payload));
+      let exists = false;
+      if (ingredientCode) {
+        exists = existingByCode.has(ingredientCode);
+      }
+      if (!exists) {
+        exists = existingByNameUnit.has(normalizeIngredientKey(name, normalizedUnit));
+      }
+      const actionStatus = exists
+        ? t('admin.ingredients.bulkImportStatusStockExisting')
+        : t('admin.ingredients.bulkImportStatusCreateNew');
+      previewRows.push(makeRow('ready', t('admin.ingredients.bulkImportRowReady'), payload, actionStatus));
     }
 
     if (totalRows === 0) {
@@ -543,6 +625,7 @@ export default function AdminIngredientsPage() {
   };
 
   const importBulk = async () => {
+    setBulkImportMessage('');
     let analysis: IngredientImportAnalysis;
     try {
       analysis = importPreview ?? analyzeIngredientImport();
@@ -595,7 +678,11 @@ export default function AdminIngredientsPage() {
 
           if (target && target.unit !== payload.unit) {
             row.status = 'failed';
-            row.note = `Ingredient "${payload.name}": unit mismatch with existing ingredient ${target.unit}`;
+            row.note = t('admin.ingredients.bulkImportRowUnitMismatch', {
+              name: payload.name,
+              unit: target.unit
+            });
+            row.statusText = row.note;
             failed++;
             continue;
           }
@@ -650,20 +737,33 @@ export default function AdminIngredientsPage() {
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Failed';
           row.status = 'failed';
-          row.note = `Ingredient "${payload.name}": ${message}`;
+          row.note = t('admin.ingredients.bulkImportRowFailed', {
+            name: payload.name,
+            message
+          });
+          row.statusText = row.note;
           failed++;
         }
       }
 
       const validRows = previewRows.filter(row => row.status === 'success').length;
       const invalidRows = previewRows.filter(row => row.status === 'failed' || row.status === 'error').length;
+      const importSummary = `${t('admin.ingredients.bulkImportResult')}: imported=${imported}, failed=${failed}`;
       setImportPreview({
         rows: previewRows,
         totalRows: previewRows.length,
         validRows,
         invalidRows
       });
-      setImportResult(`${t('admin.ingredients.bulkImportResult')}: imported=${imported}, failed=${failed}`);
+      setImportResult(importSummary);
+      if (failed === 0) {
+        closeBulkImportModal();
+        setBulkImportMessage(
+          t('admin.ingredients.bulkImportSuccessMessage', {
+            count: imported
+          })
+        );
+      }
       await loadAll();
     } catch (err) {
       setImportResult(err instanceof Error ? err.message : t('admin.ingredients.bulkImportFailed'));
@@ -686,6 +786,22 @@ export default function AdminIngredientsPage() {
       .join(', ');
   };
 
+  const rawPreviewStatusByLine = (() => {
+    const map = new Map<number, string>();
+    if (!importText.trim()) {
+      return map;
+    }
+    try {
+      const analysis = analyzeIngredientImport();
+      analysis.rows.forEach(row => {
+        map.set(row.lineNo, row.statusText || row.note);
+      });
+    } catch {
+      return map;
+    }
+    return map;
+  })();
+
   return (
     <>
       <TopNav />
@@ -701,6 +817,7 @@ export default function AdminIngredientsPage() {
                 <Button onClick={openCreate}>{t('admin.ingredients.add')}</Button>
               </div>
             </div>
+            {bulkImportMessage ? <p className="mb-3 text-sm text-green-700">{bulkImportMessage}</p> : null}
             {loading ? (
               <p className="text-sm text-muted">{t('admin.ingredients.loading')}</p>
             ) : error ? (
@@ -906,6 +1023,9 @@ export default function AdminIngredientsPage() {
                   <Button type="button" variant="outline" onClick={validateBulkImport} disabled={importing}>
                     {t('admin.ingredients.bulkImportValidate')}
                   </Button>
+                  <Button type="button" variant="outline" onClick={closeBulkImportModal} disabled={importing}>
+                    {t('common.cancel')}
+                  </Button>
                 </div>
                 <FormField label="Excel (.xlsx)">
                   <Input
@@ -935,6 +1055,7 @@ export default function AdminIngredientsPage() {
                                 {header || `column_${index + 1}`}
                               </TableHead>
                             ))}
+                            <TableHead className="whitespace-nowrap border-b border-border/70">{t('admin.ingredients.bulkImportStatus')}</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -948,6 +1069,9 @@ export default function AdminIngredientsPage() {
                                   </TableCell>
                                 );
                               })}
+                              <TableCell className="whitespace-nowrap border-b border-border/50">
+                                {rawPreviewStatusByLine.get(rowIndex + 2) || '-'}
+                              </TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
@@ -1027,11 +1151,7 @@ export default function AdminIngredientsPage() {
                                           : 'text-amber-700'
                                     }
                                   >
-                                    {row.status === 'error' || row.status === 'failed'
-                                      ? t('admin.ingredients.bulkImportStatusError')
-                                      : row.status === 'success'
-                                        ? t('admin.ingredients.bulkImportStatusSuccess')
-                                        : t('admin.ingredients.bulkImportStatusReady')}
+                                    {row.statusText}
                                   </span>
                                 </TableCell>
                                 <TableCell className="border-b border-border/50">{row.note}</TableCell>

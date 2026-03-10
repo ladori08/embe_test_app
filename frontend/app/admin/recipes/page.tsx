@@ -32,6 +32,7 @@ export default function AdminRecipesPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [error, setError] = useState('');
+  const [bulkImportMessage, setBulkImportMessage] = useState('');
 
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
   const [productId, setProductId] = useState('');
@@ -54,6 +55,9 @@ export default function AdminRecipesPage() {
     () => new Map(ingredients.map(ingredient => [normalizeHeaderKey(ingredient.name), ingredient])),
     [ingredients]
   );
+  const hasImportPreview = importPreview != null;
+  const hasImportErrors = importPreview != null && importPreview.errors.length > 0;
+  const canRunImport = hasImportPreview && !hasImportErrors && (importPreview?.items.length || 0) > 0 && !importing;
 
   const load = async () => {
     const [recipeResult, productResult, ingredientResult] = await Promise.allSettled([api.listRecipes(), api.listProductsAdmin(), api.listIngredients()]);
@@ -132,6 +136,25 @@ export default function AdminRecipesPage() {
     setImportResult('');
     setImportPreview(null);
     setImportOpen(true);
+  };
+
+  const clearBulkImportState = () => {
+    setImportText('');
+    setImportResult('');
+    setImportPreview(null);
+    setImportYieldQty('1');
+  };
+
+  const closeBulkImportModal = () => {
+    setImportOpen(false);
+    clearBulkImportState();
+  };
+
+  const handleBulkImportOpenChange = (nextOpen: boolean) => {
+    setImportOpen(nextOpen);
+    if (!nextOpen) {
+      clearBulkImportState();
+    }
   };
 
   const submit = async (e: FormEvent) => {
@@ -253,6 +276,7 @@ export default function AdminRecipesPage() {
   };
 
   const runBulkImport = async () => {
+    setBulkImportMessage('');
     if (!importProductId) {
       setImportResult(t('admin.recipes.noProducts'));
       return;
@@ -268,6 +292,15 @@ export default function AdminRecipesPage() {
     try {
       const analysis = importPreview ?? analyzeRecipeImport();
       const rowErrors = [...analysis.errors];
+      if (rowErrors.length > 0) {
+        setImportPreview(analysis);
+        setImportResult(
+          t('admin.recipes.bulkImportBlockedByErrors', {
+            count: rowErrors.length
+          })
+        );
+        return;
+      }
       const items = analysis.items;
       if (items.length === 0) {
         throw new Error(t('admin.recipes.bulkImportNoValidRows'));
@@ -281,14 +314,13 @@ export default function AdminRecipesPage() {
         await api.createRecipe(payload);
       }
 
-      const previewErrors = rowErrors.slice(0, 5).join(' | ');
-      setImportResult(
-        `${t('admin.recipes.bulkImportResult')}: items=${items.length}${rowErrors.length ? `, skipped=${rowErrors.length}` : ''}${
-          previewErrors ? ` (${previewErrors})` : ''
-        }`
-      );
       setImportPreview(null);
-      setImportOpen(false);
+      setBulkImportMessage(
+        t('admin.recipes.bulkImportSuccessMessage', {
+          count: items.length
+        })
+      );
+      closeBulkImportModal();
       await load();
     } catch (err) {
       setImportResult(err instanceof Error ? err.message : t('admin.recipes.failed'));
@@ -304,6 +336,7 @@ export default function AdminRecipesPage() {
         <AdminShell title={t('admin.nav.recipes')}>
           <Card>
             {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
+            {bulkImportMessage ? <p className="mb-3 text-sm text-green-700">{bulkImportMessage}</p> : null}
             <Tabs value={tab} onValueChange={setTab}>
               <TabsList>
                 <TabsTrigger value="list">{t('admin.recipes.tab.list')}</TabsTrigger>
@@ -416,7 +449,7 @@ export default function AdminRecipesPage() {
             </Tabs>
           </Card>
 
-          <Dialog open={importOpen} onOpenChange={setImportOpen}>
+          <Dialog open={importOpen} onOpenChange={handleBulkImportOpenChange}>
             <DialogContent className="max-w-2xl">
               <DialogHeader>
                 <DialogTitle>{t('admin.recipes.bulkImportTitle')}</DialogTitle>
@@ -506,9 +539,14 @@ export default function AdminRecipesPage() {
                   </div>
                 ) : null}
                 {importResult ? <p className="text-sm text-muted">{importResult}</p> : null}
-                <Button type="button" onClick={runBulkImport} disabled={importing}>
-                  {importing ? t('admin.recipes.bulkImportRunning') : t('admin.recipes.bulkImportRun')}
-                </Button>
+                <div className="flex justify-end gap-2">
+                  <Button type="button" variant="outline" onClick={closeBulkImportModal} disabled={importing}>
+                    {t('common.cancel')}
+                  </Button>
+                  <Button type="button" onClick={runBulkImport} disabled={!canRunImport}>
+                    {importing ? t('admin.recipes.bulkImportRunning') : t('admin.recipes.bulkImportRun')}
+                  </Button>
+                </div>
               </div>
             </DialogContent>
           </Dialog>

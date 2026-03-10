@@ -12,8 +12,15 @@ interface DialogProps {
 export function Dialog({ open, onOpenChange, children }: DialogProps) {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/30 p-4" onClick={() => onOpenChange(false)}>
-      <div className="flex min-h-full items-start justify-center py-2 sm:items-center sm:py-4">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/30 p-4">
+      <div
+        className="flex min-h-full items-start justify-center py-2 sm:items-center sm:py-4"
+        onClick={event => {
+          if (event.target === event.currentTarget) {
+            onOpenChange(false);
+          }
+        }}
+      >
         {children}
       </div>
     </div>
