@@ -1,6 +1,7 @@
 package com.embe.backend.bake;
 
 import com.embe.backend.auth.AuthService;
+import com.embe.backend.audit.AuditLogService;
 import com.embe.backend.common.ApiException;
 import com.embe.backend.ingredient.IngredientService;
 import com.embe.backend.product.ProductService;
@@ -38,12 +39,14 @@ class BakeServiceTest {
     private ProductService productService;
     @Mock
     private AuthService authService;
+    @Mock
+    private AuditLogService auditLogService;
 
     private BakeService bakeService;
 
     @BeforeEach
     void setUp() {
-        bakeService = new BakeService(bakeRepository, recipeService, inventoryMutationService, ingredientService, productService, authService);
+        bakeService = new BakeService(bakeRepository, recipeService, inventoryMutationService, ingredientService, productService, authService, auditLogService);
     }
 
     @Test
@@ -60,7 +63,7 @@ class BakeServiceTest {
 
         when(bakeRepository.findByIdempotencyKey("idem-1")).thenReturn(Optional.of(existing));
 
-        BakeResponse response = bakeService.produce(new BakeRequest("recipe-1", "idem-1", new BigDecimal("1"), null));
+        BakeResponse response = bakeService.produce(new BakeRequest("recipe-1", "idem-1", new BigDecimal("1"), null, null));
 
         assertEquals("bake-1", response.id());
         verifyNoInteractions(recipeService, inventoryMutationService, ingredientService, productService);
@@ -82,7 +85,7 @@ class BakeServiceTest {
         when(recipeService.getEntity("recipe-1")).thenReturn(recipe);
         when(inventoryMutationService.deductIngredientIfEnough(eq("ing-1"), any(BigDecimal.class))).thenReturn(false);
 
-        assertThrows(ApiException.class, () -> bakeService.produce(new BakeRequest("recipe-1", "idem-2", new BigDecimal("1"), null)));
+        assertThrows(ApiException.class, () -> bakeService.produce(new BakeRequest("recipe-1", "idem-2", new BigDecimal("1"), null, null)));
         verify(bakeRepository, never()).save(any());
     }
 }

@@ -1,6 +1,7 @@
 package com.embe.backend.order;
 
 import com.embe.backend.auth.AuthService;
+import com.embe.backend.audit.AuditLogService;
 import com.embe.backend.common.ApiException;
 import com.embe.backend.product.Product;
 import com.embe.backend.product.ProductService;
@@ -32,12 +33,14 @@ class OrderServiceTest {
     private InventoryMutationService inventoryMutationService;
     @Mock
     private AuthService authService;
+    @Mock
+    private AuditLogService auditLogService;
 
     private OrderService orderService;
 
     @BeforeEach
     void setUp() {
-        orderService = new OrderService(orderRepository, productService, inventoryMutationService, authService);
+        orderService = new OrderService(orderRepository, productService, inventoryMutationService, authService, auditLogService);
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.embe.backend.category;
 
+import com.embe.backend.audit.AuditLogService;
 import com.embe.backend.common.ApiException;
 import com.embe.backend.product.Product;
 import com.embe.backend.product.ProductRepository;
@@ -28,12 +29,14 @@ class ProductCategoryServiceTest {
     private ProductCategoryRepository categoryRepository;
     @Mock
     private ProductRepository productRepository;
+    @Mock
+    private AuditLogService auditLogService;
 
     private ProductCategoryService categoryService;
 
     @BeforeEach
     void setUp() {
-        categoryService = new ProductCategoryService(categoryRepository, productRepository);
+        categoryService = new ProductCategoryService(categoryRepository, productRepository, auditLogService);
     }
 
     @Test

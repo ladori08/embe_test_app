@@ -3,6 +3,8 @@ package com.embe.backend.ingredient;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.Field;
+import org.springframework.data.mongodb.core.mapping.FieldType;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -16,10 +18,15 @@ public class Ingredient {
     @Indexed(unique = true)
     private String name;
 
+    @Indexed(unique = true, sparse = true)
+    private String ingredientCode;
+
     private String unit;
 
+    @Field(targetType = FieldType.DECIMAL128)
     private BigDecimal currentStock;
 
+    @Field(targetType = FieldType.DECIMAL128)
     private BigDecimal reorderLevel;
 
     private String costTrackingMethod;
@@ -50,6 +57,14 @@ public class Ingredient {
 
     public void setUnit(String unit) {
         this.unit = unit;
+    }
+
+    public String getIngredientCode() {
+        return ingredientCode;
+    }
+
+    public void setIngredientCode(String ingredientCode) {
+        this.ingredientCode = ingredientCode;
     }
 
     public BigDecimal getCurrentStock() {

@@ -8,8 +8,13 @@ public record BakeResponse(
         String id,
         String recipeId,
         String productId,
+        Integer recipeVersion,
+        Boolean customOverride,
+        List<BakeAppliedItem> appliedItems,
         BigDecimal factor,
         BigDecimal producedQty,
+        BigDecimal totalIngredientCost,
+        BigDecimal producedUnitCost,
         List<BakeDeduction> deductions,
         Instant createdAt,
         String createdBy

@@ -3,6 +3,8 @@ package com.embe.backend.bake;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.Field;
+import org.springframework.data.mongodb.core.mapping.FieldType;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -21,9 +23,23 @@ public class BakeRecord {
 
     private String productId;
 
+    private Integer recipeVersion;
+
+    private Boolean customOverride;
+
+    private List<BakeAppliedItem> appliedItems;
+
+    @Field(targetType = FieldType.DECIMAL128)
     private BigDecimal factor;
 
+    @Field(targetType = FieldType.DECIMAL128)
     private BigDecimal producedQty;
+
+    @Field(targetType = FieldType.DECIMAL128)
+    private BigDecimal totalIngredientCost;
+
+    @Field(targetType = FieldType.DECIMAL128)
+    private BigDecimal producedUnitCost;
 
     private List<BakeDeduction> deductions;
 
@@ -64,6 +80,30 @@ public class BakeRecord {
         this.productId = productId;
     }
 
+    public Integer getRecipeVersion() {
+        return recipeVersion;
+    }
+
+    public void setRecipeVersion(Integer recipeVersion) {
+        this.recipeVersion = recipeVersion;
+    }
+
+    public Boolean getCustomOverride() {
+        return customOverride;
+    }
+
+    public void setCustomOverride(Boolean customOverride) {
+        this.customOverride = customOverride;
+    }
+
+    public List<BakeAppliedItem> getAppliedItems() {
+        return appliedItems;
+    }
+
+    public void setAppliedItems(List<BakeAppliedItem> appliedItems) {
+        this.appliedItems = appliedItems;
+    }
+
     public BigDecimal getFactor() {
         return factor;
     }
@@ -78,6 +118,22 @@ public class BakeRecord {
 
     public void setProducedQty(BigDecimal producedQty) {
         this.producedQty = producedQty;
+    }
+
+    public BigDecimal getTotalIngredientCost() {
+        return totalIngredientCost;
+    }
+
+    public void setTotalIngredientCost(BigDecimal totalIngredientCost) {
+        this.totalIngredientCost = totalIngredientCost;
+    }
+
+    public BigDecimal getProducedUnitCost() {
+        return producedUnitCost;
+    }
+
+    public void setProducedUnitCost(BigDecimal producedUnitCost) {
+        this.producedUnitCost = producedUnitCost;
     }
 
     public List<BakeDeduction> getDeductions() {

@@ -17,6 +17,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.util.LinkedHashSet;
 import java.util.Set;
 
 @Service
@@ -64,12 +65,42 @@ public class AuthService {
         return currentPrincipal().userId();
     }
 
+    public String currentUserEmail() {
+        return currentPrincipal().email();
+    }
+
     public Set<Role> currentRoles() {
         return currentPrincipal().roles();
     }
 
     public boolean isAdmin() {
-        return currentRoles().contains(Role.ADMIN);
+        return hasRole(Role.ADMIN);
+    }
+
+    public boolean isSuperAdmin() {
+        return hasRole(Role.SUPERADMIN);
+    }
+
+    public boolean hasRole(Role role) {
+        return effectiveRoles(currentRoles()).contains(role);
+    }
+
+    private Set<Role> effectiveRoles(Set<Role> rawRoles) {
+        Set<Role> effective = new LinkedHashSet<>();
+        if (rawRoles != null) {
+            effective.addAll(rawRoles);
+        }
+
+        if (effective.contains(Role.CLIENT)) {
+            effective.add(Role.CUSTOMER);
+        }
+
+        if (effective.contains(Role.SUPERADMIN)) {
+            effective.add(Role.ADMIN);
+            effective.add(Role.CUSTOMER);
+        }
+
+        return effective;
     }
 
     private AuthPrincipal currentPrincipal() {

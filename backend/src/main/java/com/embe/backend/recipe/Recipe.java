@@ -3,6 +3,8 @@ package com.embe.backend.recipe;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.Field;
+import org.springframework.data.mongodb.core.mapping.FieldType;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -17,6 +19,9 @@ public class Recipe {
     @Indexed(unique = true)
     private String productId;
 
+    private Integer version;
+
+    @Field(targetType = FieldType.DECIMAL128)
     private BigDecimal yieldQty;
 
     private List<RecipeItem> items;
@@ -39,6 +44,14 @@ public class Recipe {
 
     public void setProductId(String productId) {
         this.productId = productId;
+    }
+
+    public Integer getVersion() {
+        return version;
+    }
+
+    public void setVersion(Integer version) {
+        this.version = version;
     }
 
     public BigDecimal getYieldQty() {

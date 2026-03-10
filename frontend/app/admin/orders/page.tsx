@@ -29,8 +29,13 @@ export default function AdminOrdersPage() {
   }, []);
 
   const updateStatus = async (id: string, status: OrderStatus) => {
-    await api.updateOrderStatus(id, status);
-    await load();
+    try {
+      await api.updateOrderStatus(id, status);
+      await load();
+      setError('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('admin.orders.updateFailed'));
+    }
   };
 
   return (

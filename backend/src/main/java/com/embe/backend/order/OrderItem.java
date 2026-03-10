@@ -1,11 +1,16 @@
 package com.embe.backend.order;
 
+import org.springframework.data.mongodb.core.mapping.Field;
+import org.springframework.data.mongodb.core.mapping.FieldType;
+
 import java.math.BigDecimal;
 
 public class OrderItem {
     private String productId;
     private String name;
+    @Field(targetType = FieldType.DECIMAL128)
     private BigDecimal price;
+    @Field(targetType = FieldType.DECIMAL128)
     private BigDecimal qty;
 
     public String getProductId() {

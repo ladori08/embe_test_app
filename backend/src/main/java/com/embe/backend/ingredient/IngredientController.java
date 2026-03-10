@@ -1,9 +1,11 @@
 package com.embe.backend.ingredient;
 
 import jakarta.validation.Valid;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.Instant;
 import java.util.List;
 
 @RestController
@@ -49,6 +51,18 @@ public class IngredientController {
     @GetMapping("/{id}/transactions")
     public List<StockTransaction> transactions(@PathVariable String id) {
         return ingredientService.listTransactions(id);
+    }
+
+    @GetMapping("/transactions")
+    public List<IngredientStockTransactionView> transactions(
+            @RequestParam(required = false) String ingredientId,
+            @RequestParam(required = false) StockTransactionType type,
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
+            @RequestParam(required = false) Integer limit
+    ) {
+        return ingredientService.listTransactions(ingredientId, type, q, from, to, limit);
     }
 
     @PostMapping(value = "/import", consumes = "multipart/form-data")

@@ -1,4 +1,4 @@
-export type Role = 'ADMIN' | 'CLIENT';
+export type Role = 'SUPERADMIN' | 'ADMIN' | 'CUSTOMER' | 'CLIENT';
 
 export interface User {
   id: string;
@@ -7,13 +7,45 @@ export interface User {
   roles: Role[];
 }
 
+export interface AdminManagedUser {
+  id: string;
+  email: string;
+  fullName: string;
+  roles: Role[];
+  createdAt: string;
+}
+
 export interface Ingredient {
   id: string;
   name: string;
+  ingredientCode?: string;
   unit: 'g' | 'ml' | 'pcs';
   currentStock: number;
   reorderLevel?: number;
   costTrackingMethod: string;
+}
+
+export interface StockLotAllocation {
+  lotCode: string;
+  qty: number;
+  unitCost?: number | null;
+}
+
+export interface IngredientTransaction {
+  id: string;
+  ingredientId: string;
+  ingredientName: string;
+  ingredientUnit?: 'g' | 'ml' | 'pcs' | null;
+  type: 'IN' | 'OUT';
+  qty: number;
+  inputUnit?: 'g' | 'kg' | 'ml' | 'l' | 'pcs' | null;
+  unitCost?: number | null;
+  note?: string | null;
+  lotCode?: string | null;
+  remainingQty?: number | null;
+  allocations?: StockLotAllocation[];
+  createdAt: string;
+  createdBy?: string | null;
 }
 
 export interface Product {
@@ -38,6 +70,7 @@ export interface ProductCategory {
 export interface RecipeItem {
   ingredientId: string;
   ingredientName?: string;
+  unit?: string | null;
   qtyPerBatch: number;
 }
 
@@ -45,16 +78,39 @@ export interface Recipe {
   id: string;
   productId: string;
   productName: string;
+  version?: number;
   yieldQty: number;
   items: RecipeItem[];
+}
+
+export interface BakeAppliedItem {
+  ingredientId: string;
+  ingredientName?: string;
+  unit?: string;
+  qtyPerBatch: number;
+}
+
+export interface BakeDeduction {
+  ingredientId: string;
+  ingredientName?: string;
+  unit?: string;
+  qty: number;
+  cost?: number;
+  lotAllocations?: StockLotAllocation[];
 }
 
 export interface BakeRecord {
   id: string;
   recipeId: string;
   productId: string;
+  recipeVersion?: number;
+  customOverride?: boolean;
+  appliedItems?: BakeAppliedItem[];
   factor: number;
   producedQty: number;
+  totalIngredientCost?: number;
+  producedUnitCost?: number;
+  deductions?: BakeDeduction[];
   createdAt: string;
 }
 
@@ -89,4 +145,31 @@ export interface DashboardData {
   bakesLast30Days: number;
   statusBreakdown: { status: string; count: number }[];
   revenueLast7Days: { day: string; revenue: number }[];
+}
+
+export type AuditModule = 'PRODUCT' | 'INGREDIENT' | 'CATEGORY' | 'RECIPE' | 'PRODUCTION' | 'ORDER' | 'USER';
+export type AuditAction = 'CREATE' | 'UPDATE' | 'DELETE' | 'STATUS_CHANGE' | 'STOCK_ADJUST' | 'PRODUCE' | 'IMPORT';
+
+export interface AuditLogListItem {
+  id: string;
+  title: string;
+  module: AuditModule | string;
+  action: AuditAction | string;
+  entityId?: string;
+  actorEmail?: string;
+  createdAt: string;
+}
+
+export interface AuditLogDetail {
+  id: string;
+  title: string;
+  module: AuditModule | string;
+  action: AuditAction | string;
+  entityId?: string;
+  actorId?: string;
+  actorEmail?: string;
+  beforeData?: Record<string, unknown> | null;
+  afterData?: Record<string, unknown> | null;
+  metadata?: Record<string, unknown> | null;
+  createdAt: string;
 }

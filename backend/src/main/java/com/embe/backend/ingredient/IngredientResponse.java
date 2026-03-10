@@ -6,6 +6,7 @@ import java.time.Instant;
 public record IngredientResponse(
         String id,
         String name,
+        String ingredientCode,
         String unit,
         BigDecimal currentStock,
         BigDecimal reorderLevel,
