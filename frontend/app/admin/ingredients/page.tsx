@@ -265,11 +265,27 @@ export default function AdminIngredientsPage() {
     await loadAll();
   };
 
-  const openBulkImportModal = () => {
+  const clearBulkImportState = () => {
     setImportText('');
     setImportResult('');
     setImportPreview(null);
     setImportWorkbookName('');
+  };
+
+  const closeBulkImportModal = () => {
+    setImportOpen(false);
+    clearBulkImportState();
+  };
+
+  const handleBulkImportOpenChange = (nextOpen: boolean) => {
+    setImportOpen(nextOpen);
+    if (!nextOpen) {
+      clearBulkImportState();
+    }
+  };
+
+  const openBulkImportModal = () => {
+    clearBulkImportState();
     setImportOpen(true);
   };
 
@@ -866,7 +882,7 @@ export default function AdminIngredientsPage() {
             </DialogContent>
           </Dialog>
 
-          <Dialog open={importOpen} onOpenChange={setImportOpen}>
+          <Dialog open={importOpen} onOpenChange={handleBulkImportOpenChange}>
             <DialogContent className="max-w-2xl">
               <DialogHeader>
                 <DialogTitle>{t('admin.ingredients.bulkImportTitle')}</DialogTitle>
@@ -1031,9 +1047,14 @@ export default function AdminIngredientsPage() {
                   </div>
                 ) : null}
                 {importResult ? <p className="text-sm text-muted">{importResult}</p> : null}
-                <Button type="button" onClick={importBulk} disabled={!canRunImport}>
-                  {importing ? t('admin.ingredients.bulkImportRunning') : t('admin.ingredients.bulkImportRun')}
-                </Button>
+                <div className="flex justify-end gap-2">
+                  <Button type="button" variant="outline" onClick={closeBulkImportModal} disabled={importing}>
+                    {t('common.cancel')}
+                  </Button>
+                  <Button type="button" onClick={importBulk} disabled={!canRunImport}>
+                    {importing ? t('admin.ingredients.bulkImportRunning') : t('admin.ingredients.bulkImportRun')}
+                  </Button>
+                </div>
               </div>
             </DialogContent>
           </Dialog>
