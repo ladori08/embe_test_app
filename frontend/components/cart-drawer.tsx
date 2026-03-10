@@ -48,6 +48,17 @@ export function CartDrawer({ open, onOpenChange }: { open: boolean; onOpenChange
             <span className="font-semibold">{moneyCompact(subtotal)}</span>
           </div>
           <Button
+            variant="outline"
+            className="mb-2 w-full"
+            disabled={items.length === 0}
+            onClick={() => {
+              onOpenChange(false);
+              router.push('/shop/cart');
+            }}
+          >
+            {t('drawer.viewCart')}
+          </Button>
+          <Button
             className="w-full"
             disabled={items.length === 0}
             onClick={() => {

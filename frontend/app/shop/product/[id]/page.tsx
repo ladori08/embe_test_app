@@ -17,6 +17,7 @@ export default function ProductDetailPage() {
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [selectedQty, setSelectedQty] = useState(1);
   const { addItem } = useCart();
   const { t, moneyCompact } = useI18n();
 
@@ -47,10 +48,40 @@ export default function ProductDetailPage() {
               <Badge>{t('product.stock', { stock: product.currentStock })}</Badge>
             </div>
             <p className="mt-3 text-sm text-muted">{t('product.description')}</p>
+            <div className="mt-4 flex items-center gap-3">
+              <span className="text-sm text-muted">{t('shop.quantity')}</span>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9 w-9 px-0"
+                  onClick={() => setSelectedQty(prev => Math.max(1, prev - 1))}
+                >
+                  -
+                </Button>
+                <span className="w-10 text-center tabular-nums">{selectedQty}</span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9 w-9 px-0"
+                  onClick={() => setSelectedQty(prev => Math.min(Math.max(1, product.currentStock), prev + 1))}
+                >
+                  +
+                </Button>
+              </div>
+            </div>
             <div className="mt-5 flex gap-3">
-              <Button onClick={() => addItem(product)}>{t('shop.addToCart')}</Button>
-              <Link href="/shop/checkout">
-                <Button variant="outline">{t('product.checkoutNow')}</Button>
+              <Button
+                onClick={() => {
+                  addItem(product, selectedQty);
+                  setSelectedQty(1);
+                }}
+                disabled={product.currentStock <= 0}
+              >
+                {t('shop.addToCart')}
+              </Button>
+              <Link href="/shop/cart">
+                <Button variant="outline">{t('product.viewCart')}</Button>
               </Link>
             </div>
           </Card>
