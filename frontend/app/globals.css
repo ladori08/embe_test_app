@@ -19,6 +19,8 @@ body {
   width: 120px;
   height: 60px;
   opacity: 0.35;
+  pointer-events: none;
+  user-select: none;
 }
 
 @keyframes rise {

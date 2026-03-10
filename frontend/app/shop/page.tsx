@@ -19,8 +19,25 @@ export default function ShopPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [cartOpen, setCartOpen] = useState(false);
-  const { addItem, items } = useCart();
+  const [selectedQty, setSelectedQty] = useState<Record<string, number>>({});
+  const { addItem, itemCount } = useCart();
   const { t, moneyCompact } = useI18n();
+
+  const getSelectedQty = (productId: string) => {
+    const raw = selectedQty[productId];
+    if (!Number.isFinite(raw) || raw == null) {
+      return 1;
+    }
+    return Math.max(1, Math.floor(raw));
+  };
+
+  const setQty = (productId: string, qty: number, maxQty: number) => {
+    const clamped = Math.max(1, Math.min(Math.floor(qty), Math.max(1, maxQty)));
+    setSelectedQty(prev => ({
+      ...prev,
+      [productId]: clamped
+    }));
+  };
 
   useEffect(() => {
     api
@@ -42,7 +59,7 @@ export default function ShopPage() {
           <p className="mt-3 max-w-xl text-muted">{t('shop.heroDesc')}</p>
           <div className="mt-6 flex gap-3">
             <Button onClick={() => setCartOpen(true)}>
-              <ShoppingBag className="mr-2 h-4 w-4" /> {t('shop.cartCta', { count: items.length })}
+              <ShoppingBag className="mr-2 h-4 w-4" /> {t('shop.cartCta', { count: itemCount })}
             </Button>
             <Link href="/shop/checkout">
               <Button variant="outline">{t('shop.quickCheckout')}</Button>
@@ -72,9 +89,47 @@ export default function ShopPage() {
                     <span className="text-lg font-semibold">{moneyCompact(product.price)}</span>
                     <Badge>{t('shop.stock', { stock: product.currentStock })}</Badge>
                   </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted">{t('shop.quantity')}</span>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-9 w-9 px-0"
+                        onClick={() => setQty(product.id, getSelectedQty(product.id) - 1, product.currentStock)}
+                      >
+                        -
+                      </Button>
+                      <span className="w-10 text-center tabular-nums">{getSelectedQty(product.id)}</span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-9 w-9 px-0"
+                        onClick={() => setQty(product.id, getSelectedQty(product.id) + 1, product.currentStock)}
+                      >
+                        +
+                      </Button>
+                    </div>
+                  </div>
                   <div className="flex gap-2">
-                    <Button onClick={() => addItem(product)} className="flex-1">
+                    <Button
+                      onClick={() => {
+                        addItem(product, getSelectedQty(product.id));
+                        setSelectedQty(prev => ({ ...prev, [product.id]: 1 }));
+                      }}
+                      className="flex-1"
+                      disabled={product.currentStock <= 0}
+                    >
                       {t('shop.addToCart')}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="px-3"
+                      onClick={() => addItem(product, 1)}
+                      disabled={product.currentStock <= 0}
+                    >
+                      {t('shop.quickAddOne')}
                     </Button>
                     <Link className="flex-1" href={`/shop/product/${product.id}`}>
                       <Button variant="outline" className="w-full">
