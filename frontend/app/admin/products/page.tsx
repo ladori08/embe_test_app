@@ -93,17 +93,32 @@ export default function AdminProductsPage() {
   }, [open, editing, form.category]);
 
   const openCreate = () => {
+    if (editing) {
+      setForm(emptyForm);
+    }
     setEditing(null);
-    setForm(emptyForm);
     setError('');
     setOpen(true);
   };
 
   const openEdit = (item: Product) => {
+    if (editing?.id !== item.id) {
+      setForm({ ...item, regenerateSku: false });
+    }
     setEditing(item);
-    setForm({ ...item, regenerateSku: false });
     setError('');
     setOpen(true);
+  };
+
+  const closeProductModal = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+  };
+
+  const cancelProductModal = () => {
+    setEditing(null);
+    setForm(emptyForm);
+    setError('');
+    setOpen(false);
   };
 
   const handleCategoryChange = (value: string) => {
@@ -160,6 +175,9 @@ export default function AdminProductsPage() {
       } else {
         await api.createProduct(payload);
       }
+      setEditing(null);
+      setForm(emptyForm);
+      setError('');
       setOpen(false);
       await loadProducts();
     } catch (err) {
@@ -173,10 +191,10 @@ export default function AdminProductsPage() {
   };
 
   const openCategoryManager = () => {
+    if (categoryDialogOpen) {
+      return;
+    }
     setCategoryDialogOpen(true);
-    setCategoryError('');
-    setEditingCategory(null);
-    setCategoryName('');
   };
 
   const openCategoryEdit = (category: ProductCategory) => {
@@ -188,6 +206,16 @@ export default function AdminProductsPage() {
   const resetCategoryForm = () => {
     setEditingCategory(null);
     setCategoryName('');
+  };
+
+  const closeCategoryDialog = (nextOpen: boolean) => {
+    setCategoryDialogOpen(nextOpen);
+  };
+
+  const cancelCategoryDialog = () => {
+    resetCategoryForm();
+    setCategoryError('');
+    setCategoryDialogOpen(false);
   };
 
   const submitCategory = async (e: FormEvent) => {
@@ -343,7 +371,7 @@ export default function AdminProductsPage() {
             )}
           </Card>
 
-          <Dialog open={open} onOpenChange={setOpen}>
+          <Dialog open={open} onOpenChange={closeProductModal}>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>{editing ? t('admin.products.edit') : t('admin.products.create')}</DialogTitle>
@@ -405,12 +433,17 @@ export default function AdminProductsPage() {
                     <option value="false">{t('admin.products.inactive')}</option>
                   </Select>
                 </FormField>
-                <Button className="w-full">{t('common.save')}</Button>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <Button type="button" variant="outline" onClick={cancelProductModal}>
+                    {t('common.cancel')}
+                  </Button>
+                  <Button>{t('common.save')}</Button>
+                </div>
               </form>
             </DialogContent>
           </Dialog>
 
-          <Dialog open={categoryDialogOpen} onOpenChange={setCategoryDialogOpen}>
+          <Dialog open={categoryDialogOpen} onOpenChange={closeCategoryDialog}>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>{t('admin.products.categoriesTitle')}</DialogTitle>
@@ -474,6 +507,11 @@ export default function AdminProductsPage() {
                   </Table>
                 </div>
               )}
+              <div className="mt-4">
+                <Button type="button" variant="outline" onClick={cancelCategoryDialog} className="w-full">
+                  {t('common.cancel')}
+                </Button>
+              </div>
             </DialogContent>
           </Dialog>
         </AdminShell>

@@ -175,25 +175,54 @@ export default function AdminIngredientsPage() {
   }, []);
 
   const openCreate = () => {
+    if (editing) {
+      setForm(emptyForm);
+    }
     setEditing(null);
-    setForm(emptyForm);
     setOpen(true);
   };
 
   const openEdit = (item: Ingredient) => {
+    if (editing?.id !== item.id) {
+      setForm(item);
+    }
     setEditing(item);
-    setForm(item);
     setOpen(true);
   };
 
+  const closeIngredientModal = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+  };
+
+  const cancelIngredientModal = () => {
+    setEditing(null);
+    setForm(emptyForm);
+    setOpen(false);
+  };
+
   const openRestock = (item: Ingredient) => {
-    setRestockTarget(item);
+    if (restockTarget?.id !== item.id) {
+      setRestockTarget(item);
+      setRestockQty('0');
+      const options = getInputUnitOptions(item.unit);
+      setRestockUnit((options[0] || 'g') as 'g' | 'kg' | 'ml' | 'l' | 'pcs');
+      setRestockTotalCost('');
+      setRestockNote('');
+    }
+    setRestockOpen(true);
+  };
+
+  const closeRestockModal = (nextOpen: boolean) => {
+    setRestockOpen(nextOpen);
+  };
+
+  const cancelRestockModal = () => {
+    setRestockTarget(null);
     setRestockQty('0');
-    const options = getInputUnitOptions(item.unit);
-    setRestockUnit((options[0] || 'g') as 'g' | 'kg' | 'ml' | 'l' | 'pcs');
+    setRestockUnit('g');
     setRestockTotalCost('');
     setRestockNote('');
-    setRestockOpen(true);
+    setRestockOpen(false);
   };
 
   const submit = async (e: FormEvent) => {
@@ -247,11 +276,23 @@ export default function AdminIngredientsPage() {
   };
 
   const openBulkImportModal = () => {
+    setImportOpen(true);
+  };
+
+  const closeImportModal = (nextOpen: boolean) => {
+    setImportOpen(nextOpen);
+  };
+
+  const resetBulkImportDraft = () => {
     setImportText('');
     setImportResult('');
     setImportPreview(null);
     setImportWorkbookName('');
-    setImportOpen(true);
+  };
+
+  const cancelImportModal = () => {
+    resetBulkImportDraft();
+    setImportOpen(false);
   };
 
   const applyTransactionFilter = async (e: FormEvent) => {
@@ -702,7 +743,7 @@ export default function AdminIngredientsPage() {
             )}
           </Card>
 
-          <Dialog open={open} onOpenChange={setOpen}>
+          <Dialog open={open} onOpenChange={closeIngredientModal}>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>{editing ? t('admin.ingredients.edit') : t('admin.ingredients.create')}</DialogTitle>
@@ -727,12 +768,17 @@ export default function AdminIngredientsPage() {
                 <FormField label={t('admin.ingredients.costTracking')}>
                   <Input value={form.costTrackingMethod} onChange={e => setForm({ ...form, costTrackingMethod: e.target.value })} />
                 </FormField>
-                <Button className="w-full">{t('common.save')}</Button>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <Button type="button" variant="outline" onClick={cancelIngredientModal}>
+                    {t('common.cancel')}
+                  </Button>
+                  <Button>{t('common.save')}</Button>
+                </div>
               </form>
             </DialogContent>
           </Dialog>
 
-          <Dialog open={restockOpen} onOpenChange={setRestockOpen}>
+          <Dialog open={restockOpen} onOpenChange={closeRestockModal}>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>{t('admin.ingredients.restockTitle')}</DialogTitle>
@@ -766,12 +812,17 @@ export default function AdminIngredientsPage() {
                 <FormField label={t('admin.ingredients.restockNote')}>
                   <Input value={restockNote} onChange={e => setRestockNote(e.target.value)} />
                 </FormField>
-                <Button className="w-full">{t('common.save')}</Button>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <Button type="button" variant="outline" onClick={cancelRestockModal}>
+                    {t('common.cancel')}
+                  </Button>
+                  <Button>{t('common.save')}</Button>
+                </div>
               </form>
             </DialogContent>
           </Dialog>
 
-          <Dialog open={importOpen} onOpenChange={setImportOpen}>
+          <Dialog open={importOpen} onOpenChange={closeImportModal}>
             <DialogContent className="max-w-2xl">
               <DialogHeader>
                 <DialogTitle>{t('admin.ingredients.bulkImportTitle')}</DialogTitle>
@@ -915,9 +966,14 @@ export default function AdminIngredientsPage() {
                   </div>
                 ) : null}
                 {importResult ? <p className="text-sm text-muted">{importResult}</p> : null}
-                <Button type="button" onClick={importBulk} disabled={importing}>
-                  {importing ? t('admin.ingredients.bulkImportRunning') : t('admin.ingredients.bulkImportRun')}
-                </Button>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <Button type="button" variant="outline" onClick={cancelImportModal} disabled={importing}>
+                    {t('common.cancel')}
+                  </Button>
+                  <Button type="button" onClick={importBulk} disabled={importing}>
+                    {importing ? t('admin.ingredients.bulkImportRunning') : t('admin.ingredients.bulkImportRun')}
+                  </Button>
+                </div>
               </div>
             </DialogContent>
           </Dialog>
