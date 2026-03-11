@@ -126,12 +126,30 @@ export default function AdminRecipesPage() {
   };
 
   const openBulkImport = () => {
+    if (!importProductId) {
+      setImportProductId(productId || products[0]?.id || '');
+    }
+    if (!importYieldQty) {
+      setImportYieldQty('1');
+    }
+    setImportOpen(true);
+  };
+
+  const closeImportModal = (nextOpen: boolean) => {
+    setImportOpen(nextOpen);
+  };
+
+  const resetImportDraft = () => {
     setImportProductId(productId || products[0]?.id || '');
     setImportYieldQty('1');
     setImportText('');
     setImportResult('');
     setImportPreview(null);
-    setImportOpen(true);
+  };
+
+  const cancelImportModal = () => {
+    resetImportDraft();
+    setImportOpen(false);
   };
 
   const submit = async (e: FormEvent) => {
@@ -416,7 +434,7 @@ export default function AdminRecipesPage() {
             </Tabs>
           </Card>
 
-          <Dialog open={importOpen} onOpenChange={setImportOpen}>
+          <Dialog open={importOpen} onOpenChange={closeImportModal}>
             <DialogContent className="max-w-2xl">
               <DialogHeader>
                 <DialogTitle>{t('admin.recipes.bulkImportTitle')}</DialogTitle>
@@ -506,9 +524,14 @@ export default function AdminRecipesPage() {
                   </div>
                 ) : null}
                 {importResult ? <p className="text-sm text-muted">{importResult}</p> : null}
-                <Button type="button" onClick={runBulkImport} disabled={importing}>
-                  {importing ? t('admin.recipes.bulkImportRunning') : t('admin.recipes.bulkImportRun')}
-                </Button>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <Button type="button" variant="outline" onClick={cancelImportModal} disabled={importing}>
+                    {t('common.cancel')}
+                  </Button>
+                  <Button type="button" onClick={runBulkImport} disabled={importing}>
+                    {importing ? t('admin.recipes.bulkImportRunning') : t('admin.recipes.bulkImportRun')}
+                  </Button>
+                </div>
               </div>
             </DialogContent>
           </Dialog>

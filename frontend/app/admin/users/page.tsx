@@ -66,22 +66,37 @@ export default function AdminUsersPage() {
   );
 
   const openCreate = () => {
+    if (editing) {
+      setForm(emptyForm);
+    }
     setEditing(null);
-    setForm(emptyForm);
     setError('');
     setOpen(true);
   };
 
   const openEdit = (managedUser: AdminManagedUser) => {
+    if (editing?.id !== managedUser.id) {
+      setForm({
+        email: managedUser.email,
+        fullName: managedUser.fullName,
+        password: '',
+        roles: managedUser.roles
+      });
+    }
     setEditing(managedUser);
-    setForm({
-      email: managedUser.email,
-      fullName: managedUser.fullName,
-      password: '',
-      roles: managedUser.roles
-    });
     setError('');
     setOpen(true);
+  };
+
+  const closeFormModal = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+  };
+
+  const cancelFormModal = () => {
+    setEditing(null);
+    setForm(emptyForm);
+    setError('');
+    setOpen(false);
   };
 
   const toggleRole = (role: Role) => {
@@ -199,7 +214,7 @@ export default function AdminUsersPage() {
             )}
           </Card>
 
-          <Dialog open={open} onOpenChange={setOpen}>
+          <Dialog open={open} onOpenChange={closeFormModal}>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>{editing ? t('admin.users.edit') : t('admin.users.create')}</DialogTitle>
@@ -246,7 +261,12 @@ export default function AdminUsersPage() {
                     ))}
                   </div>
                 </FormField>
-                <Button className="w-full">{t('common.save')}</Button>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <Button type="button" variant="outline" onClick={cancelFormModal}>
+                    {t('common.cancel')}
+                  </Button>
+                  <Button>{t('common.save')}</Button>
+                </div>
               </form>
             </DialogContent>
           </Dialog>

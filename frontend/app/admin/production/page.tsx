@@ -83,15 +83,26 @@ export default function AdminProductionPage() {
       setError(t('admin.production.noRecipes'));
       return;
     }
-    setOverrideLines(
-      selectedRecipe.items.map(item => ({
-        ingredientId: item.ingredientId,
-        ingredientName: item.ingredientName || item.ingredientId,
-        unit: item.unit,
-        qtyPerBatch: Number(item.qtyPerBatch)
-      }))
+    setOverrideLines(prev =>
+      prev.length > 0
+        ? prev
+        : selectedRecipe.items.map(item => ({
+            ingredientId: item.ingredientId,
+            ingredientName: item.ingredientName || item.ingredientId,
+            unit: item.unit,
+            qtyPerBatch: Number(item.qtyPerBatch)
+          }))
     );
     setOverrideOpen(true);
+  };
+
+  const closeOverrideModal = (nextOpen: boolean) => {
+    setOverrideOpen(nextOpen);
+  };
+
+  const cancelOverrideModal = () => {
+    setOverrideLines([]);
+    setOverrideOpen(false);
   };
 
   const confirmOverride = () => {
@@ -202,7 +213,7 @@ export default function AdminProductionPage() {
             )}
           </Card>
 
-          <Dialog open={overrideOpen} onOpenChange={setOverrideOpen}>
+          <Dialog open={overrideOpen} onOpenChange={closeOverrideModal}>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>{t('admin.production.customizeTitle')}</DialogTitle>
@@ -225,7 +236,7 @@ export default function AdminProductionPage() {
                 ))}
               </div>
               <div className="mt-4 flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setOverrideOpen(false)}>
+                <Button variant="outline" onClick={cancelOverrideModal}>
                   {t('common.cancel')}
                 </Button>
                 <Button onClick={confirmOverride}>{t('common.confirm')}</Button>
