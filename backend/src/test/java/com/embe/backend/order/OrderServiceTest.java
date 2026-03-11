@@ -63,12 +63,17 @@ class OrderServiceTest {
 
         OrderResponse response = orderService.createOrder(new CreateOrderRequest(
                 List.of(new CreateOrderItemRequest("p1", new BigDecimal("2"))),
-                new BigDecimal("1.00")
+                "Alice",
+                "0901234567",
+                "123 Test Street",
+                "Leave at door"
         ));
 
         assertEquals(new BigDecimal("7.00"), response.subtotal());
-        assertEquals(new BigDecimal("8.00"), response.total());
+        assertEquals(BigDecimal.ZERO, response.tax());
+        assertEquals(new BigDecimal("7.00"), response.total());
         assertEquals(OrderStatus.NEW, response.status());
+        assertEquals("Alice", response.recipientName());
     }
 
     @Test
