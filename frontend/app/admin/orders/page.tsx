@@ -5,6 +5,8 @@ import { TopNav } from '@/components/top-nav';
 import { RequireRole } from '@/components/require-role';
 import { AdminShell } from '@/components/admin-shell';
 import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select } from '@/components/ui/select';
 import { useI18n } from '@/components/language-context';
@@ -15,6 +17,8 @@ const statuses: OrderStatus[] = ['NEW', 'CONFIRMED', 'PAID', 'CANCELLED', 'COMPL
 
 export default function AdminOrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [error, setError] = useState('');
   const { t, money } = useI18n();
 
@@ -36,6 +40,11 @@ export default function AdminOrdersPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : t('admin.orders.updateFailed'));
     }
+  };
+
+  const openDetail = (order: Order) => {
+    setSelectedOrder(order);
+    setDetailOpen(true);
   };
 
   return (
@@ -61,8 +70,17 @@ export default function AdminOrdersPage() {
                 <TableBody>
                   {orders.map(order => (
                     <TableRow key={order.id}>
-                      <TableCell>{order.id.slice(0, 8)}...</TableCell>
-                      <TableCell>{order.userId.slice(0, 6)}...</TableCell>
+                      <TableCell>
+                        <button className="text-left text-sm underline" onClick={() => openDetail(order)}>
+                          {order.id.slice(0, 8)}...
+                        </button>
+                      </TableCell>
+                      <TableCell>
+                        <div>{order.userId ? `${order.userId.slice(0, 6)}...` : t('admin.orders.guest')}</div>
+                        <div className="text-xs text-muted">
+                          {order.recipientName || '-'} · {order.recipientPhone || '-'}
+                        </div>
+                      </TableCell>
                       <TableCell>{money(order.total)}</TableCell>
                       <TableCell>
                         <Select value={order.status} onChange={e => updateStatus(order.id, e.target.value as OrderStatus)}>
@@ -80,6 +98,93 @@ export default function AdminOrdersPage() {
               </Table>
             )}
           </Card>
+          <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+            <DialogContent className="max-w-3xl">
+              <DialogHeader>
+                <DialogTitle>{t('admin.orders.detailTitle')}</DialogTitle>
+              </DialogHeader>
+              {selectedOrder ? (
+                <div className="space-y-4 text-sm">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <p>
+                      <strong>{t('admin.orders.order')}:</strong> {selectedOrder.id}
+                    </p>
+                    <p>
+                      <strong>{t('admin.orders.status')}:</strong> {t(`status.${selectedOrder.status}`)}
+                    </p>
+                    <p>
+                      <strong>{t('admin.orders.created')}:</strong> {new Date(selectedOrder.createdAt).toLocaleString()}
+                    </p>
+                    <p>
+                      <strong>{t('admin.orders.user')}:</strong>{' '}
+                      {selectedOrder.userId ? `${selectedOrder.userId.slice(0, 6)}...` : t('admin.orders.guest')}
+                    </p>
+                    <p>
+                      <strong>{t('checkout.recipientName')}:</strong> {selectedOrder.recipientName || '-'}
+                    </p>
+                    <p>
+                      <strong>{t('checkout.recipientPhone')}:</strong> {selectedOrder.recipientPhone || '-'}
+                    </p>
+                    <p className="sm:col-span-2">
+                      <strong>{t('checkout.deliveryAddress')}:</strong> {selectedOrder.deliveryAddress || '-'}
+                    </p>
+                    <p className="sm:col-span-2">
+                      <strong>{t('checkout.note')}:</strong> {selectedOrder.note || '-'}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="mb-2 font-semibold">{t('admin.orders.items')}</p>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>{t('admin.products.name')}</TableHead>
+                          <TableHead>{t('shop.quantity')}</TableHead>
+                          <TableHead>{t('admin.orders.unitPrice')}</TableHead>
+                          <TableHead>{t('admin.orders.lineTotal')}</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {selectedOrder.items.map(item => (
+                          <TableRow key={`${selectedOrder.id}-${item.productId}`}>
+                            <TableCell>{item.name}</TableCell>
+                            <TableCell>{item.qty}</TableCell>
+                            <TableCell>{money(item.price)}</TableCell>
+                            <TableCell>{money(item.price * item.qty)}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  <div className="space-y-1 border-t border-border pt-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted">{t('common.subtotal')}</span>
+                      <span>{money(selectedOrder.subtotal)}</span>
+                    </div>
+                    {selectedOrder.tax > 0 ? (
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted">{t('checkout.tax')}</span>
+                        <span>{money(selectedOrder.tax)}</span>
+                      </div>
+                    ) : null}
+                    <div className="flex items-center justify-between text-base font-semibold">
+                      <span>{t('common.total')}</span>
+                      <span>{money(selectedOrder.total)}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end">
+                    <Button type="button" variant="outline" onClick={() => setDetailOpen(false)}>
+                      {t('common.close')}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-muted">{t('admin.orders.empty')}</p>
+              )}
+            </DialogContent>
+          </Dialog>
         </AdminShell>
       </RequireRole>
     </>

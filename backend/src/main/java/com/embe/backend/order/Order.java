@@ -23,6 +23,14 @@ public class Order {
 
     private OrderStatus status;
 
+    private String recipientName;
+
+    private String recipientPhone;
+
+    private String deliveryAddress;
+
+    private String note;
+
     @Field(targetType = FieldType.DECIMAL128)
     private BigDecimal subtotal;
 
@@ -69,6 +77,38 @@ public class Order {
 
     public void setStatus(OrderStatus status) {
         this.status = status;
+    }
+
+    public String getRecipientName() {
+        return recipientName;
+    }
+
+    public void setRecipientName(String recipientName) {
+        this.recipientName = recipientName;
+    }
+
+    public String getRecipientPhone() {
+        return recipientPhone;
+    }
+
+    public void setRecipientPhone(String recipientPhone) {
+        this.recipientPhone = recipientPhone;
+    }
+
+    public String getDeliveryAddress() {
+        return deliveryAddress;
+    }
+
+    public void setDeliveryAddress(String deliveryAddress) {
+        this.deliveryAddress = deliveryAddress;
+    }
+
+    public String getNote() {
+        return note;
+    }
+
+    public void setNote(String note) {
+        this.note = note;
     }
 
     public BigDecimal getSubtotal() {

@@ -42,7 +42,7 @@ public class OrderService {
 
     @Transactional
     public OrderResponse createOrder(CreateOrderRequest request) {
-        String userId = authService.currentUserId();
+        String userId = optionalCurrentUserId();
 
         List<OrderItem> items = request.items().stream().map(itemRequest -> {
             Product product = productService.getEntity(itemRequest.productId());
@@ -60,12 +60,17 @@ public class OrderService {
         BigDecimal subtotal = items.stream()
                 .map(item -> item.getPrice().multiply(item.getQty()))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal tax = request.tax() == null ? BigDecimal.ZERO : request.tax();
+        BigDecimal tax = BigDecimal.ZERO;
 
         Order order = new Order();
         order.setUserId(userId);
         order.setItems(items);
         order.setStatus(OrderStatus.NEW);
+        order.setRecipientName(request.recipientName().trim());
+        order.setRecipientPhone(request.recipientPhone().trim());
+        order.setDeliveryAddress(request.deliveryAddress().trim());
+        String note = request.note() == null ? null : request.note().trim();
+        order.setNote(note == null || note.isEmpty() ? null : note);
         order.setSubtotal(subtotal);
         order.setTax(tax);
         order.setTotal(subtotal.add(tax));
@@ -98,8 +103,10 @@ public class OrderService {
 
     public OrderResponse getMine(String id) {
         Order order = getEntity(id);
-        if (!authService.isAdmin() && !order.getUserId().equals(authService.currentUserId())) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "Order does not belong to current user");
+        if (!authService.isAdmin()) {
+            if (order.getUserId() == null || !order.getUserId().equals(authService.currentUserId())) {
+                throw new ApiException(HttpStatus.FORBIDDEN, "Order does not belong to current user");
+            }
         }
         return toResponse(order);
     }
@@ -164,6 +171,10 @@ public class OrderService {
                 order.getUserId(),
                 order.getItems().stream().map(item -> new OrderItemResponse(item.getProductId(), item.getName(), item.getPrice(), item.getQty())).toList(),
                 order.getStatus(),
+                order.getRecipientName(),
+                order.getRecipientPhone(),
+                order.getDeliveryAddress(),
+                order.getNote(),
                 order.getSubtotal(),
                 order.getTax(),
                 order.getTotal(),
@@ -171,6 +182,14 @@ public class OrderService {
                 order.getCreatedAt(),
                 order.getUpdatedAt()
         );
+    }
+
+    private String optionalCurrentUserId() {
+        try {
+            return authService.currentUserId();
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private String currentUser() {

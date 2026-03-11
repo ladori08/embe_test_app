@@ -125,9 +125,13 @@ export interface OrderItem {
 
 export interface Order {
   id: string;
-  userId: string;
+  userId: string | null;
   status: OrderStatus;
   items: OrderItem[];
+  recipientName?: string | null;
+  recipientPhone?: string | null;
+  deliveryAddress?: string | null;
+  note?: string | null;
   subtotal: number;
   tax: number;
   total: number;
