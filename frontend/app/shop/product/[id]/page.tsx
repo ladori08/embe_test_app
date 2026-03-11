@@ -17,8 +17,9 @@ export default function ProductDetailPage() {
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [stockWarning, setStockWarning] = useState('');
   const [selectedQty, setSelectedQty] = useState(1);
-  const { addItem } = useCart();
+  const { addItem, items, stockByProductId } = useCart();
   const { t, moneyCompact } = useI18n();
 
   useEffect(() => {
@@ -29,6 +30,26 @@ export default function ProductDetailPage() {
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
   }, [params.id]);
+
+  const inCartQty = product ? items.find(item => item.productId === product.id)?.qty || 0 : 0;
+  const syncedStock = product ? stockByProductId[product.id] : undefined;
+  const sourceStock = Number.isFinite(syncedStock) ? Number(syncedStock) : Number(product?.currentStock || 0);
+  const remainingStock = product
+    ? Math.max(0, Math.max(0, Math.floor(sourceStock)) - inCartQty)
+    : 0;
+
+  useEffect(() => {
+    if (remainingStock <= 0) {
+      setSelectedQty(0);
+      return;
+    }
+    setSelectedQty(prev => {
+      if (!Number.isFinite(prev) || prev <= 0) {
+        return 1;
+      }
+      return Math.min(prev, remainingStock);
+    });
+  }, [remainingStock]);
 
   return (
     <>
@@ -45,9 +66,10 @@ export default function ProductDetailPage() {
             <p className="mt-2 text-muted">{product.category}</p>
             <div className="mt-4 flex items-center gap-3">
               <span className="text-2xl font-semibold">{moneyCompact(product.price)}</span>
-              <Badge>{t('product.stock', { stock: product.currentStock })}</Badge>
+              <Badge>{t('product.stock', { stock: remainingStock })}</Badge>
             </div>
             <p className="mt-3 text-sm text-muted">{t('product.description')}</p>
+            {stockWarning ? <p className="mt-2 text-sm text-red-600">{stockWarning}</p> : null}
             <div className="mt-4 flex items-center gap-3">
               <span className="text-sm text-muted">{t('shop.quantity')}</span>
               <div className="flex items-center gap-2">
@@ -56,6 +78,7 @@ export default function ProductDetailPage() {
                   variant="outline"
                   className="h-9 w-9 px-0"
                   onClick={() => setSelectedQty(prev => Math.max(1, prev - 1))}
+                  disabled={remainingStock <= 0 || selectedQty <= 1}
                 >
                   -
                 </Button>
@@ -64,7 +87,8 @@ export default function ProductDetailPage() {
                   type="button"
                   variant="outline"
                   className="h-9 w-9 px-0"
-                  onClick={() => setSelectedQty(prev => Math.min(Math.max(1, product.currentStock), prev + 1))}
+                  onClick={() => setSelectedQty(prev => Math.min(Math.max(1, remainingStock), prev + 1))}
+                  disabled={remainingStock <= 0 || selectedQty >= remainingStock}
                 >
                   +
                 </Button>
@@ -73,10 +97,15 @@ export default function ProductDetailPage() {
             <div className="mt-5 flex gap-3">
               <Button
                 onClick={() => {
-                  addItem(product, selectedQty);
+                  const result = addItem(product, selectedQty);
+                  if (!result.ok) {
+                    setStockWarning(t('shop.insufficientStock', { name: product.name, available: result.available }));
+                    return;
+                  }
+                  setStockWarning('');
                   setSelectedQty(1);
                 }}
-                disabled={product.currentStock <= 0}
+                disabled={remainingStock <= 0 || selectedQty <= 0}
               >
                 {t('shop.addToCart')}
               </Button>

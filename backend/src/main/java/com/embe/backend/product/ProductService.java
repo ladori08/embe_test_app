@@ -30,19 +30,22 @@ public class ProductService {
     private final ProductCategoryService productCategoryService;
     private final RecipeRepository recipeRepository;
     private final AuditLogService auditLogService;
+    private final ProductStockEventBroadcaster productStockEventBroadcaster;
 
     public ProductService(
             ProductRepository productRepository,
             ProductStockLogRepository productStockLogRepository,
             ProductCategoryService productCategoryService,
             RecipeRepository recipeRepository,
-            AuditLogService auditLogService
+            AuditLogService auditLogService,
+            ProductStockEventBroadcaster productStockEventBroadcaster
     ) {
         this.productRepository = productRepository;
         this.productStockLogRepository = productStockLogRepository;
         this.productCategoryService = productCategoryService;
         this.recipeRepository = recipeRepository;
         this.auditLogService = auditLogService;
+        this.productStockEventBroadcaster = productStockEventBroadcaster;
     }
 
     public List<ProductResponse> listAll() {
@@ -95,6 +98,7 @@ public class ProductService {
                         response,
                         java.util.Map.of("sku", response.sku())
                 );
+                publishStockEvent(saved.getId(), saved.getCurrentStock());
                 return response;
             } catch (DataIntegrityViolationException ex) {
                 if (!isDuplicateKey(ex)) {
@@ -117,6 +121,7 @@ public class ProductService {
         if (Boolean.TRUE.equals(request.regenerateSku())) {
             ProductResponse after = saveWithRegeneratedSku(product, categoryName);
             logUpdate(before, after);
+            publishStockEvent(after.id(), after.currentStock());
             return after;
         }
 
@@ -130,6 +135,7 @@ public class ProductService {
         product.setSku(finalSku);
         ProductResponse after = saveWithManualSku(product);
         logUpdate(before, after);
+        publishStockEvent(after.id(), after.currentStock());
         return after;
     }
 
@@ -324,5 +330,9 @@ public class ProductService {
         }
         String escaped = value.replace("\"", "\"\"");
         return "\"" + escaped + "\"";
+    }
+
+    private void publishStockEvent(String productId, BigDecimal stock) {
+        productStockEventBroadcaster.publish(productId, stock == null ? BigDecimal.ZERO : stock);
     }
 }

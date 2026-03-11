@@ -36,12 +36,21 @@ class ProductServiceTest {
     private RecipeRepository recipeRepository;
     @Mock
     private AuditLogService auditLogService;
+    @Mock
+    private ProductStockEventBroadcaster productStockEventBroadcaster;
 
     private ProductService productService;
 
     @BeforeEach
     void setUp() {
-        productService = new ProductService(productRepository, productStockLogRepository, productCategoryService, recipeRepository, auditLogService);
+        productService = new ProductService(
+                productRepository,
+                productStockLogRepository,
+                productCategoryService,
+                recipeRepository,
+                auditLogService,
+                productStockEventBroadcaster
+        );
     }
 
     @Test

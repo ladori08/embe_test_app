@@ -31,6 +31,14 @@ public class Order {
 
     private String note;
 
+    @Indexed(unique = true, sparse = true)
+    private String idempotencyKey;
+
+    @Indexed
+    private Instant holdExpiresAt;
+
+    private String cancelReason;
+
     @Field(targetType = FieldType.DECIMAL128)
     private BigDecimal subtotal;
 
@@ -109,6 +117,30 @@ public class Order {
 
     public void setNote(String note) {
         this.note = note;
+    }
+
+    public String getIdempotencyKey() {
+        return idempotencyKey;
+    }
+
+    public void setIdempotencyKey(String idempotencyKey) {
+        this.idempotencyKey = idempotencyKey;
+    }
+
+    public Instant getHoldExpiresAt() {
+        return holdExpiresAt;
+    }
+
+    public void setHoldExpiresAt(Instant holdExpiresAt) {
+        this.holdExpiresAt = holdExpiresAt;
+    }
+
+    public String getCancelReason() {
+        return cancelReason;
+    }
+
+    public void setCancelReason(String cancelReason) {
+        this.cancelReason = cancelReason;
     }
 
     public BigDecimal getSubtotal() {
