@@ -14,16 +14,18 @@ import {
   User
 } from '@/lib/types';
 
-const API_URL =
+export const API_URL =
   (globalThis as typeof globalThis & { process?: { env?: Record<string, string | undefined> } }).process?.env?.NEXT_PUBLIC_API_URL ||
   'http://localhost:8080';
 
 class ApiError extends Error {
   status: number;
+  details: unknown;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, details?: unknown) {
     super(message);
     this.status = status;
+    this.details = details;
   }
 }
 
@@ -43,13 +45,15 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   if (!response.ok) {
     let message = `Request failed (${response.status})`;
+    let details: unknown = null;
     try {
       const data = await response.json();
       message = data.message || message;
+      details = data.details;
     } catch {
       // keep default
     }
-    throw new ApiError(message, response.status);
+    throw new ApiError(message, response.status, details);
   }
 
   const text = await response.text();
@@ -127,7 +131,12 @@ export const api = {
   produceBake: (payload: unknown) => request<BakeRecord>('/api/admin/bakes', { method: 'POST', body: JSON.stringify(payload) }),
   listBakes: () => request<BakeRecord[]>('/api/admin/bakes'),
 
-  createOrder: (payload: unknown) => request<Order>('/api/orders', { method: 'POST', body: JSON.stringify(payload) }),
+  createOrder: (payload: unknown, idempotencyKey?: string) =>
+    request<Order>('/api/orders', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      headers: idempotencyKey ? { 'X-Idempotency-Key': idempotencyKey } : undefined
+    }),
   listMyOrders: () => request<Order[]>('/api/orders'),
 
   listOrdersAdmin: () => request<Order[]>('/api/admin/orders'),

@@ -10,6 +10,7 @@ import { useI18n } from '@/components/language-context';
 export default function CartPage() {
   const { items, subtotal, updateQty, removeItem } = useCart();
   const { t, money } = useI18n();
+  const hasRealtimeStockConflict = items.some(item => item.qty > item.maxQty);
 
   return (
     <>
@@ -30,6 +31,11 @@ export default function CartPage() {
                 <div className="min-w-0">
                   <p className="font-semibold">{item.name}</p>
                   <p className="text-sm text-muted">{money(item.price)}</p>
+                  {item.qty > item.maxQty ? (
+                    <p className="mt-1 text-xs text-red-600">
+                      {t('shop.insufficientStock', { name: item.name, available: item.maxQty })}
+                    </p>
+                  ) : null}
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="text-right">
@@ -41,7 +47,13 @@ export default function CartPage() {
                       -
                     </Button>
                     <span className="w-10 text-center tabular-nums">{item.qty}</span>
-                    <Button type="button" variant="outline" className="h-9 w-9 px-0" onClick={() => updateQty(item.productId, item.qty + 1)}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-9 w-9 px-0"
+                      onClick={() => updateQty(item.productId, item.qty + 1)}
+                      disabled={item.qty >= item.maxQty}
+                    >
                       +
                     </Button>
                   </div>
@@ -52,6 +64,9 @@ export default function CartPage() {
               </Card>
             ))}
             <Card>
+              {hasRealtimeStockConflict ? (
+                <p className="mb-3 rounded-xl bg-[#fff1f1] p-3 text-sm text-red-600">{t('checkout.stockSyncWarning')}</p>
+              ) : null}
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted">{t('common.subtotal')}</span>
                 <span className="text-lg font-semibold">{money(subtotal)}</span>
@@ -61,7 +76,7 @@ export default function CartPage() {
                   <Button variant="outline" className="w-full">{t('cart.backToShop')}</Button>
                 </Link>
                 <Link href="/shop/checkout" className="w-full">
-                  <Button className="w-full">{t('cart.proceedToCheckout')}</Button>
+                  <Button className="w-full" disabled={hasRealtimeStockConflict}>{t('cart.proceedToCheckout')}</Button>
                 </Link>
               </div>
             </Card>

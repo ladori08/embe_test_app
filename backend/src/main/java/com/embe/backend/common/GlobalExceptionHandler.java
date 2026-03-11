@@ -21,7 +21,13 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ApiError> handleApiException(ApiException exception, HttpServletRequest request) {
         return ResponseEntity.status(exception.getStatus()).body(
-                new ApiError(exception.getMessage(), exception.getStatus().value(), Instant.now(), request.getRequestURI())
+                new ApiError(
+                        exception.getMessage(),
+                        exception.getStatus().value(),
+                        Instant.now(),
+                        request.getRequestURI(),
+                        exception.getDetails()
+                )
         );
     }
 
@@ -31,14 +37,14 @@ public class GlobalExceptionHandler {
                 .map(FieldError::getDefaultMessage)
                 .collect(Collectors.joining("; "));
         return ResponseEntity.badRequest().body(
-                new ApiError(message, HttpStatus.BAD_REQUEST.value(), Instant.now(), request.getRequestURI())
+                new ApiError(message, HttpStatus.BAD_REQUEST.value(), Instant.now(), request.getRequestURI(), null)
         );
     }
 
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ApiError> handleAccessDenied(AccessDeniedException exception, HttpServletRequest request) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(
-                new ApiError("Access denied", HttpStatus.FORBIDDEN.value(), Instant.now(), request.getRequestURI())
+                new ApiError("Access denied", HttpStatus.FORBIDDEN.value(), Instant.now(), request.getRequestURI(), null)
         );
     }
 
@@ -46,7 +52,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleException(Exception exception, HttpServletRequest request) {
         log.error("Unhandled error", exception);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
-                new ApiError("Internal server error", HttpStatus.INTERNAL_SERVER_ERROR.value(), Instant.now(), request.getRequestURI())
+                new ApiError("Internal server error", HttpStatus.INTERNAL_SERVER_ERROR.value(), Instant.now(), request.getRequestURI(), null)
         );
     }
 }

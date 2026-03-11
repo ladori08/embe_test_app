@@ -9,4 +9,6 @@ public interface OrderRepository extends MongoRepository<Order, String> {
     List<Order> findByUserIdOrderByCreatedAtDesc(String userId);
     List<Order> findAllByOrderByCreatedAtDesc();
     long countByCreatedAtAfter(Instant createdAt);
+    java.util.Optional<Order> findByIdempotencyKey(String idempotencyKey);
+    List<Order> findByStatusAndStockDeductedTrueAndHoldExpiresAtBefore(OrderStatus status, Instant holdExpiresAt);
 }

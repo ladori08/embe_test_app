@@ -1,28 +1,53 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useEffect, useRef, useState } from 'react';
 import { TopNav } from '@/components/top-nav';
 import { useCart } from '@/components/cart-context';
 import { useAuth } from '@/components/auth-context';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { api } from '@/lib/api';
+import { ApiError, api } from '@/lib/api';
 import { useI18n } from '@/components/language-context';
 
 const CHECKOUT_INFO_STORAGE_KEY = 'embe-checkout-delivery-info';
 
+interface StockAdjustmentDetail {
+  productId: string;
+  name: string;
+  requestedQty: number;
+  availableQty: number;
+}
+
+interface InsufficientStockDetails {
+  code?: string;
+  adjustments?: StockAdjustmentDetail[];
+}
+
 export default function CheckoutPage() {
-  const { items, subtotal, clear } = useCart();
+  const { items, subtotal, clear, updateQty, refreshStockSnapshot } = useCart();
   const { user } = useAuth();
   const { t, money } = useI18n();
+  const idempotencyKeyRef = useRef(
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `checkout-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  );
   const [recipientName, setRecipientName] = useState('');
   const [recipientPhone, setRecipientPhone] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [note, setNote] = useState('');
   const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
+  const [errorPopupMessage, setErrorPopupMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const hasRealtimeStockConflict = items.some(item => item.qty > item.maxQty);
+
+  const showErrorPopup = (nextMessage: string) => {
+    setMessage('');
+    setErrorPopupMessage(nextMessage);
+  };
 
   useEffect(() => {
     try {
@@ -67,8 +92,31 @@ export default function CheckoutPage() {
   }, [recipientName, recipientPhone, deliveryAddress]);
 
   const onPlaceOrder = async () => {
-    setError('');
+    setErrorPopupMessage('');
     setMessage('');
+
+    if (hasRealtimeStockConflict) {
+      const adjustments = items
+        .filter(item => item.qty > item.maxQty)
+        .map(item => ({
+          productId: item.productId,
+          name: item.name,
+          stock: Math.max(0, Math.floor(item.maxQty))
+        }));
+      adjustments.forEach(adjustment => updateQty(adjustment.productId, adjustment.stock));
+      await refreshStockSnapshot();
+      showErrorPopup(
+        adjustments
+          .map(adjustment =>
+            t('checkout.autoAdjustedStock', {
+              name: adjustment.name,
+              stock: adjustment.stock
+            })
+          )
+          .join(' ')
+      );
+      return;
+    }
 
     const cleanName = recipientName.trim();
     const cleanPhone = recipientPhone.trim();
@@ -76,19 +124,19 @@ export default function CheckoutPage() {
     const cleanNote = note.trim();
 
     if (!cleanName) {
-      setError(t('checkout.requiredRecipientName'));
+      showErrorPopup(t('checkout.requiredRecipientName'));
       return;
     }
     if (!cleanPhone) {
-      setError(t('checkout.requiredRecipientPhone'));
+      showErrorPopup(t('checkout.requiredRecipientPhone'));
       return;
     }
     if (!/^[0-9+\-\s()]{8,20}$/.test(cleanPhone)) {
-      setError(t('checkout.invalidRecipientPhone'));
+      showErrorPopup(t('checkout.invalidRecipientPhone'));
       return;
     }
     if (!cleanAddress) {
-      setError(t('checkout.requiredDeliveryAddress'));
+      showErrorPopup(t('checkout.requiredDeliveryAddress'));
       return;
     }
 
@@ -100,12 +148,34 @@ export default function CheckoutPage() {
         recipientPhone: cleanPhone,
         deliveryAddress: cleanAddress,
         note: cleanNote || null
-      });
+      }, idempotencyKeyRef.current);
       clear();
       setNote('');
       setMessage(t('checkout.success'));
+      idempotencyKeyRef.current =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `checkout-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('checkout.failed'));
+      if (err instanceof ApiError && err.status === 409) {
+        const details = err.details as InsufficientStockDetails | null;
+        if (details?.code === 'INSUFFICIENT_STOCK' && Array.isArray(details.adjustments) && details.adjustments.length > 0) {
+          details.adjustments.forEach(adjustment => {
+            const normalizedStock = Math.max(0, Math.floor(Number(adjustment.availableQty || 0)));
+            updateQty(adjustment.productId, normalizedStock);
+          });
+          await refreshStockSnapshot();
+          const lines = details.adjustments.map(adjustment =>
+            t('checkout.autoAdjustedStock', {
+              name: adjustment.name || adjustment.productId,
+              stock: Math.max(0, Math.floor(Number(adjustment.availableQty || 0)))
+            })
+          );
+          showErrorPopup(lines.join(' '));
+          return;
+        }
+      }
+      showErrorPopup(err instanceof Error ? err.message : t('checkout.failed'));
     } finally {
       setSubmitting(false);
     }
@@ -116,7 +186,6 @@ export default function CheckoutPage() {
       <TopNav />
       <main className="mx-auto max-w-3xl px-4 py-8">
         <h1 className="mb-4 text-3xl font-script">{t('checkout.title')}</h1>
-        {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
         {message && <p className="mb-3 text-sm text-green-700">{message}</p>}
         {items.length === 0 ? (
           <Card>{t('checkout.empty')}</Card>
@@ -130,6 +199,9 @@ export default function CheckoutPage() {
             ))}
             <div className="space-y-3 border-t border-border pt-3">
               <p className="text-sm font-medium text-ink">{t('checkout.deliveryInfo')}</p>
+              <p className="rounded-2xl border border-[#f2c79f] bg-[#fff1dd] px-4 py-3 text-sm font-medium leading-relaxed text-[#8b4d1f]">
+                {t('checkout.holdNotice')}
+              </p>
               <div>
                 <label className="mb-1 block text-sm text-muted">{t('checkout.recipientName')}</label>
                 <Input value={recipientName} onChange={e => setRecipientName(e.target.value)} />
@@ -162,9 +234,27 @@ export default function CheckoutPage() {
             <Button disabled={submitting} onClick={onPlaceOrder} className="w-full">
               {submitting ? t('checkout.placingOrder') : t('checkout.placeOrder')}
             </Button>
+            <Link href="/shop" className="w-full">
+              <Button type="button" variant="outline" className="w-full">
+                {t('cart.backToShop')}
+              </Button>
+            </Link>
           </Card>
         )}
       </main>
+      <Dialog open={Boolean(errorPopupMessage)} onOpenChange={() => {}}>
+        <DialogContent className="max-w-md" hideCloseButton>
+          <DialogHeader>
+            <DialogTitle>{t('checkout.errorPopupTitle')}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm leading-relaxed text-ink">{errorPopupMessage}</p>
+          <div className="mt-4 flex justify-end">
+            <Button type="button" onClick={() => setErrorPopupMessage('')}>
+              {t('common.confirm')}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
