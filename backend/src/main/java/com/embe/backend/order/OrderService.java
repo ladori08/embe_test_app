@@ -12,11 +12,15 @@ import com.embe.backend.product.ProductService;
 import com.embe.backend.product.ProductStockLogType;
 import com.embe.backend.stock.InventoryMutationService;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -41,6 +45,8 @@ public class OrderService {
     private static final int NOTE_MAX_LENGTH = 500;
     private static final int IDEMPOTENCY_KEY_MAX_LENGTH = 128;
     public static final long ORDER_HOLD_MINUTES = 30;
+    private static final int MAX_CREATE_ORDER_RETRIES = 5;
+    private static final long BASE_CREATE_ORDER_RETRY_SLEEP_MS = 20L;
     private static final Pattern PHONE_PATTERN = Pattern.compile("^\\+?[0-9][0-9\\-()\\s]{6,18}[0-9]$");
 
     private final OrderRepository orderRepository;
@@ -49,14 +55,17 @@ public class OrderService {
     private final AuthService authService;
     private final AuditLogService auditLogService;
     private final ProductStockEventBroadcaster productStockEventBroadcaster;
+    private final TransactionTemplate transactionTemplate;
 
+    @Autowired
     public OrderService(
             OrderRepository orderRepository,
             ProductService productService,
             InventoryMutationService inventoryMutationService,
             AuthService authService,
             AuditLogService auditLogService,
-            ProductStockEventBroadcaster productStockEventBroadcaster
+            ProductStockEventBroadcaster productStockEventBroadcaster,
+            @Nullable PlatformTransactionManager transactionManager
     ) {
         this.orderRepository = orderRepository;
         this.productService = productService;
@@ -64,10 +73,32 @@ public class OrderService {
         this.authService = authService;
         this.auditLogService = auditLogService;
         this.productStockEventBroadcaster = productStockEventBroadcaster;
+        this.transactionTemplate = transactionManager == null ? null : new TransactionTemplate(transactionManager);
     }
 
-    @Transactional
     public OrderResponse createOrder(CreateOrderRequest request, String rawIdempotencyKey) {
+        int attempt = 0;
+        while (true) {
+            try {
+                if (transactionTemplate == null) {
+                    return createOrderInTransaction(request, rawIdempotencyKey);
+                }
+                OrderResponse response = transactionTemplate.execute(status -> createOrderInTransaction(request, rawIdempotencyKey));
+                if (response == null) {
+                    throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to create order");
+                }
+                return response;
+            } catch (RuntimeException ex) {
+                if (!isRetryableCreateOrderException(ex) || attempt >= MAX_CREATE_ORDER_RETRIES) {
+                    throw ex;
+                }
+                pauseCreateOrderRetry(attempt);
+                attempt++;
+            }
+        }
+    }
+
+    private OrderResponse createOrderInTransaction(CreateOrderRequest request, String rawIdempotencyKey) {
         String userId = optionalCurrentUserId();
         String recipientName = sanitizeRequiredText(request.recipientName(), "Recipient name is required");
         String recipientPhone = sanitizeRequiredText(request.recipientPhone(), "Recipient phone is required");
@@ -449,6 +480,32 @@ public class OrderService {
             return OrderStatus.valueOf(text.trim().toUpperCase());
         } catch (IllegalArgumentException ignored) {
             return null;
+        }
+    }
+
+    private boolean isRetryableCreateOrderException(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null) {
+                String normalized = message.toLowerCase();
+                if (normalized.contains("write conflict")
+                        || normalized.contains("nosuchtransaction")
+                        || normalized.contains("transienttransactionerror")) {
+                    return true;
+                }
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private void pauseCreateOrderRetry(int attempt) {
+        long sleepMs = BASE_CREATE_ORDER_RETRY_SLEEP_MS * (attempt + 1L);
+        try {
+            Thread.sleep(sleepMs);
+        } catch (InterruptedException interruptedException) {
+            Thread.currentThread().interrupt();
         }
     }
 
