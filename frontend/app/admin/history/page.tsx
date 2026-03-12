@@ -182,6 +182,11 @@ export default function AdminHistoryPage() {
               ) : (
                 <p className="text-sm text-muted">{t('admin.history.empty')}</p>
               )}
+              <div className="mt-4 flex justify-end">
+                <Button type="button" variant="outline" onClick={() => setDetailOpen(false)}>
+                  {t('common.close')}
+                </Button>
+              </div>
             </DialogContent>
           </Dialog>
         </AdminShell>

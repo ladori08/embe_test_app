@@ -768,7 +768,10 @@ export default function AdminIngredientsPage() {
                 <FormField label={t('admin.ingredients.costTracking')}>
                   <Input value={form.costTrackingMethod} onChange={e => setForm({ ...form, costTrackingMethod: e.target.value })} />
                 </FormField>
-                <div className="grid gap-2 sm:grid-cols-2">
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <Button type="button" variant="ghost" onClick={() => closeIngredientModal(false)}>
+                    {t('common.close')}
+                  </Button>
                   <Button type="button" variant="outline" onClick={cancelIngredientModal}>
                     {t('common.cancel')}
                   </Button>
@@ -812,7 +815,10 @@ export default function AdminIngredientsPage() {
                 <FormField label={t('admin.ingredients.restockNote')}>
                   <Input value={restockNote} onChange={e => setRestockNote(e.target.value)} />
                 </FormField>
-                <div className="grid gap-2 sm:grid-cols-2">
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <Button type="button" variant="ghost" onClick={() => closeRestockModal(false)}>
+                    {t('common.close')}
+                  </Button>
                   <Button type="button" variant="outline" onClick={cancelRestockModal}>
                     {t('common.cancel')}
                   </Button>
@@ -966,7 +972,10 @@ export default function AdminIngredientsPage() {
                   </div>
                 ) : null}
                 {importResult ? <p className="text-sm text-muted">{importResult}</p> : null}
-                <div className="grid gap-2 sm:grid-cols-2">
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <Button type="button" variant="ghost" onClick={() => closeImportModal(false)} disabled={importing}>
+                    {t('common.close')}
+                  </Button>
                   <Button type="button" variant="outline" onClick={cancelImportModal} disabled={importing}>
                     {t('common.cancel')}
                   </Button>

@@ -13,6 +13,8 @@ import { ApiError, api } from '@/lib/api';
 import { useI18n } from '@/components/language-context';
 
 const CHECKOUT_INFO_STORAGE_KEY = 'embe-checkout-delivery-info';
+const CHECKOUT_HOLD_DEADLINE_STORAGE_KEY = 'embe-checkout-hold-deadline';
+const CHECKOUT_HOLD_WINDOW_MS = 30 * 60 * 1000;
 
 interface StockAdjustmentDetail {
   productId: string;
@@ -42,12 +44,39 @@ export default function CheckoutPage() {
   const [message, setMessage] = useState('');
   const [errorPopupMessage, setErrorPopupMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [holdDeadline, setHoldDeadline] = useState<number | null>(null);
+  const [nowTs, setNowTs] = useState(() => Date.now());
   const hasRealtimeStockConflict = items.some(item => item.qty > item.maxQty);
 
   const showErrorPopup = (nextMessage: string) => {
     setMessage('');
     setErrorPopupMessage(nextMessage);
   };
+
+  useEffect(() => {
+    const now = Date.now();
+    const raw = window.localStorage.getItem(CHECKOUT_HOLD_DEADLINE_STORAGE_KEY);
+    const parsed = raw ? Number(raw) : NaN;
+    const nextDeadline = Number.isFinite(parsed) && parsed > now ? parsed : now + CHECKOUT_HOLD_WINDOW_MS;
+    window.localStorage.setItem(CHECKOUT_HOLD_DEADLINE_STORAGE_KEY, String(nextDeadline));
+    setHoldDeadline(nextDeadline);
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNowTs(Date.now());
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!holdDeadline || holdDeadline > nowTs) {
+      return;
+    }
+    const nextDeadline = nowTs + CHECKOUT_HOLD_WINDOW_MS;
+    window.localStorage.setItem(CHECKOUT_HOLD_DEADLINE_STORAGE_KEY, String(nextDeadline));
+    setHoldDeadline(nextDeadline);
+  }, [holdDeadline, nowTs]);
 
   useEffect(() => {
     try {
@@ -181,6 +210,13 @@ export default function CheckoutPage() {
     }
   };
 
+  const holdRemainingSeconds = holdDeadline
+    ? Math.max(0, Math.ceil((holdDeadline - nowTs) / 1000))
+    : Math.floor(CHECKOUT_HOLD_WINDOW_MS / 1000);
+  const holdMinutes = String(Math.floor(holdRemainingSeconds / 60)).padStart(2, '0');
+  const holdSeconds = String(holdRemainingSeconds % 60).padStart(2, '0');
+  const holdCountdown = `${holdMinutes}:${holdSeconds}`;
+
   return (
     <>
       <TopNav />
@@ -200,7 +236,7 @@ export default function CheckoutPage() {
             <div className="space-y-3 border-t border-border pt-3">
               <p className="text-sm font-medium text-ink">{t('checkout.deliveryInfo')}</p>
               <p className="rounded-2xl border border-[#f2c79f] bg-[#fff1dd] px-4 py-3 text-sm font-medium leading-relaxed text-[#8b4d1f]">
-                {t('checkout.holdNotice')}
+                {t('checkout.holdNoticeWithTimer', { time: holdCountdown })}
               </p>
               <div>
                 <label className="mb-1 block text-sm text-muted">{t('checkout.recipientName')}</label>

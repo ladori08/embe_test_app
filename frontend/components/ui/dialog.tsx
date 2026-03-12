@@ -12,11 +12,33 @@ interface DialogProps {
 const DialogContext = React.createContext<((open: boolean) => void) | null>(null);
 
 export function Dialog({ open, onOpenChange, children }: DialogProps) {
+  React.useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onOpenChange(false);
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [open, onOpenChange]);
+
   if (!open) return null;
   return (
     <DialogContext.Provider value={onOpenChange}>
-      <div className="fixed inset-0 z-50 overflow-y-auto bg-black/30 p-4" onClick={() => onOpenChange(false)}>
-        <div className="flex min-h-full items-start justify-center py-2 sm:items-center sm:py-4">
+      <div className="fixed inset-0 z-50 overflow-y-auto bg-black/30 p-4">
+        <div
+          className="flex min-h-full w-full items-start justify-center py-2 sm:items-center sm:py-4"
+          onMouseDown={event => {
+            if (event.target === event.currentTarget) {
+              onOpenChange(false);
+            }
+          }}
+        >
           {children}
         </div>
       </div>

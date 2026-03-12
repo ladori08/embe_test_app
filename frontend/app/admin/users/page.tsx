@@ -261,7 +261,10 @@ export default function AdminUsersPage() {
                     ))}
                   </div>
                 </FormField>
-                <div className="grid gap-2 sm:grid-cols-2">
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <Button type="button" variant="ghost" onClick={() => closeFormModal(false)}>
+                    {t('common.close')}
+                  </Button>
                   <Button type="button" variant="outline" onClick={cancelFormModal}>
                     {t('common.cancel')}
                   </Button>

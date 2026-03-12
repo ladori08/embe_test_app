@@ -61,6 +61,8 @@ const dictionaries: Record<Locale, Record<string, string>> = {
     'checkout.deliveryAddress': 'Delivery address',
     'checkout.note': 'Note (optional)',
     'checkout.holdNotice': 'Embe will hold your order for 30 minutes. After that, the order is automatically cancelled.',
+    'checkout.holdNoticeWithTimer':
+      'Embe will hold your order for 30 minutes. Time left in this checkout window: {time}. After that, the order is automatically cancelled.',
     'checkout.errorPopupTitle': 'Checkout notice',
     'checkout.stockSyncWarning': 'Some items in your cart exceed current stock. Please review your cart before placing order.',
     'checkout.autoAdjustedStock': 'Only {stock} item(s) left for "{name}". Embe updated your cart quantity to {stock}. Please review your cart.',
@@ -377,6 +379,8 @@ const dictionaries: Record<Locale, Record<string, string>> = {
     'checkout.deliveryAddress': 'Địa chỉ giao hàng',
     'checkout.note': 'Ghi chú (không bắt buộc)',
     'checkout.holdNotice': 'Embé sẽ giữ đơn hàng của bạn trong 30 phút. Quá thời gian, đơn hàng sẽ được tự động hủy.',
+    'checkout.holdNoticeWithTimer':
+      'Embé sẽ giữ đơn hàng của bạn trong 30 phút. Thời gian còn lại của phiên thanh toán này: {time}. Quá thời gian, đơn hàng sẽ được tự động hủy.',
     'checkout.errorPopupTitle': 'Thông báo thanh toán',
     'checkout.stockSyncWarning': 'Một số sản phẩm trong giỏ đã vượt tồn kho hiện tại. Bạn kiểm tra lại giỏ hàng trước khi đặt nhé.',
     'checkout.autoAdjustedStock': 'Sản phẩm "{name}" chỉ còn {stock}. Embé đã giúp bạn cập nhật lại số lượng trong giỏ về {stock}. Bạn kiểm tra lại giỏ hàng giúp Embé nhé!',
