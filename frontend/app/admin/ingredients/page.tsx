@@ -85,6 +85,8 @@ export default function AdminIngredientsPage() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Ingredient | null>(null);
   const [form, setForm] = useState<any>(emptyForm);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailTarget, setDetailTarget] = useState<Ingredient | null>(null);
 
   const [restockOpen, setRestockOpen] = useState(false);
   const [restockTarget, setRestockTarget] = useState<Ingredient | null>(null);
@@ -180,6 +182,18 @@ export default function AdminIngredientsPage() {
     }
     setEditing(null);
     setOpen(true);
+  };
+
+  const openDetail = (item: Ingredient) => {
+    setDetailTarget(item);
+    setDetailOpen(true);
+  };
+
+  const closeDetailModal = (nextOpen: boolean) => {
+    setDetailOpen(nextOpen);
+    if (!nextOpen) {
+      setDetailTarget(null);
+    }
   };
 
   const openEdit = (item: Ingredient) => {
@@ -658,12 +672,12 @@ export default function AdminIngredientsPage() {
                 </TableHeader>
                 <TableBody>
                   {items.map(item => (
-                    <TableRow key={item.id}>
+                    <TableRow key={item.id} className="cursor-pointer hover:bg-[#f8f1e8]/60" onClick={() => openDetail(item)}>
                       <TableCell>{item.name}</TableCell>
                       <TableCell>{convertUnit(item.unit, unitDisplayMode)}</TableCell>
                       <TableCell>{formatQty(convertQty(Number(item.currentStock || 0), item.unit, unitDisplayMode))}</TableCell>
                       <TableCell>{formatQty(convertQty(Number(item.reorderLevel || 0), item.unit, unitDisplayMode))}</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-right" onClick={event => event.stopPropagation()}>
                         <button className="mr-3 text-sm underline" onClick={() => openRestock(item)}>
                           {t('admin.ingredients.restock')}
                         </button>
@@ -742,6 +756,36 @@ export default function AdminIngredientsPage() {
               </Table>
             )}
           </Card>
+
+          <Dialog open={detailOpen} onOpenChange={closeDetailModal}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{t('admin.ingredients.detailTitle')}</DialogTitle>
+              </DialogHeader>
+              {detailTarget ? (
+                <div className="space-y-3">
+                  <FormField label={t('admin.ingredients.name')}>
+                    <Input value={detailTarget.name} readOnly />
+                  </FormField>
+                  <FormField label={t('admin.ingredients.ingredientCode')}>
+                    <Input value={detailTarget.ingredientCode || '-'} readOnly />
+                  </FormField>
+                  <FormField label={t('admin.ingredients.unit')}>
+                    <Input value={convertUnit(detailTarget.unit, unitDisplayMode)} readOnly />
+                  </FormField>
+                  <FormField label={t('admin.ingredients.currentStock')}>
+                    <Input value={formatQty(convertQty(Number(detailTarget.currentStock || 0), detailTarget.unit, unitDisplayMode))} readOnly />
+                  </FormField>
+                  <FormField label={t('admin.ingredients.reorderLevel')}>
+                    <Input value={formatQty(convertQty(Number(detailTarget.reorderLevel || 0), detailTarget.unit, unitDisplayMode))} readOnly />
+                  </FormField>
+                  <FormField label={t('admin.ingredients.costTracking')}>
+                    <Input value={detailTarget.costTrackingMethod || '-'} readOnly />
+                  </FormField>
+                </div>
+              ) : null}
+            </DialogContent>
+          </Dialog>
 
           <Dialog open={open} onOpenChange={closeIngredientModal}>
             <DialogContent>

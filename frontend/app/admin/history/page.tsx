@@ -125,12 +125,8 @@ export default function AdminHistoryPage() {
                 </TableHeader>
                 <TableBody>
                   {logs.map(log => (
-                    <TableRow key={log.id}>
-                      <TableCell>
-                        <button className="text-left text-sm underline" onClick={() => openDetail(log.id)}>
-                          {log.title}
-                        </button>
-                      </TableCell>
+                    <TableRow key={log.id} className="cursor-pointer hover:bg-[#f8f1e8]/60" onClick={() => openDetail(log.id)}>
+                      <TableCell>{log.title}</TableCell>
                       <TableCell>{log.module}</TableCell>
                       <TableCell>{log.action}</TableCell>
                       <TableCell>{log.actorEmail || 'system'}</TableCell>
