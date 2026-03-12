@@ -235,7 +235,10 @@ export default function AdminProductionPage() {
                   </div>
                 ))}
               </div>
-              <div className="mt-4 flex justify-end gap-2">
+              <div className="mt-4 flex flex-wrap justify-end gap-2">
+                <Button variant="ghost" onClick={() => closeOverrideModal(false)}>
+                  {t('common.close')}
+                </Button>
                 <Button variant="outline" onClick={cancelOverrideModal}>
                   {t('common.cancel')}
                 </Button>

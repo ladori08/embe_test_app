@@ -433,7 +433,10 @@ export default function AdminProductsPage() {
                     <option value="false">{t('admin.products.inactive')}</option>
                   </Select>
                 </FormField>
-                <div className="grid gap-2 sm:grid-cols-2">
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <Button type="button" variant="ghost" onClick={() => closeProductModal(false)}>
+                    {t('common.close')}
+                  </Button>
                   <Button type="button" variant="outline" onClick={cancelProductModal}>
                     {t('common.cancel')}
                   </Button>
@@ -507,8 +510,11 @@ export default function AdminProductsPage() {
                   </Table>
                 </div>
               )}
-              <div className="mt-4">
-                <Button type="button" variant="outline" onClick={cancelCategoryDialog} className="w-full">
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                <Button type="button" variant="ghost" onClick={() => closeCategoryDialog(false)}>
+                  {t('common.close')}
+                </Button>
+                <Button type="button" variant="outline" onClick={cancelCategoryDialog}>
                   {t('common.cancel')}
                 </Button>
               </div>

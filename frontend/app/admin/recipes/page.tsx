@@ -524,7 +524,10 @@ export default function AdminRecipesPage() {
                   </div>
                 ) : null}
                 {importResult ? <p className="text-sm text-muted">{importResult}</p> : null}
-                <div className="grid gap-2 sm:grid-cols-2">
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <Button type="button" variant="ghost" onClick={() => closeImportModal(false)} disabled={importing}>
+                    {t('common.close')}
+                  </Button>
                   <Button type="button" variant="outline" onClick={cancelImportModal} disabled={importing}>
                     {t('common.cancel')}
                   </Button>
