@@ -2,6 +2,7 @@ package com.embe.backend.order;
 
 import com.embe.backend.auth.AuthService;
 import com.embe.backend.audit.AuditAction;
+import com.embe.backend.audit.AuditLogDetailResponse;
 import com.embe.backend.audit.AuditLogService;
 import com.embe.backend.audit.AuditModule;
 import com.embe.backend.common.ApiException;
@@ -214,7 +215,64 @@ public class OrderService {
     }
 
     public List<OrderResponse> listAll() {
-        return orderRepository.findAllByOrderByCreatedAtDesc().stream().map(this::toResponse).toList();
+        return listAll(null, null, null);
+    }
+
+    public List<OrderResponse> listAll(String status, Instant from, Instant to) {
+        OrderStatus statusFilter = parseOrderStatus(status);
+        return orderRepository.findAllByOrderByCreatedAtDesc().stream()
+                .filter(order -> statusFilter == null || order.getStatus() == statusFilter)
+                .filter(order -> from == null || (order.getCreatedAt() != null && !order.getCreatedAt().isBefore(from)))
+                .filter(order -> to == null || (order.getCreatedAt() != null && !order.getCreatedAt().isAfter(to)))
+                .map(this::toResponse)
+                .toList();
+    }
+
+    public List<OrderStatusTimelineResponse> listStatusTimeline(String id) {
+        Order order = getEntity(id);
+        List<AuditLogDetailResponse> logs = auditLogService.listByModuleAndEntityId(AuditModule.ORDER, id);
+
+        List<OrderStatusTimelineResponse> timeline = new ArrayList<>();
+        for (AuditLogDetailResponse log : logs) {
+            if (!Objects.equals(log.entityId(), id)) {
+                continue;
+            }
+            if (!Objects.equals(log.action(), AuditAction.CREATE.name()) && !Objects.equals(log.action(), AuditAction.STATUS_CHANGE.name())) {
+                continue;
+            }
+
+            Map<String, Object> metadata = log.metadata();
+            OrderStatus status = extractStatusFromAudit(metadata, log.action(), log.afterData());
+            if (status == null) {
+                continue;
+            }
+
+            String cancelReason = metadata == null ? null : Objects.toString(metadata.get("cancelReason"), null);
+            if (cancelReason != null && cancelReason.isBlank()) {
+                cancelReason = null;
+            }
+            if (cancelReason == null && status == OrderStatus.CANCELLED) {
+                cancelReason = order.getCancelReason();
+            }
+
+            timeline.add(new OrderStatusTimelineResponse(
+                    status,
+                    log.createdAt(),
+                    log.actorEmail(),
+                    cancelReason
+            ));
+        }
+
+        if (timeline.isEmpty()) {
+            timeline.add(new OrderStatusTimelineResponse(
+                    order.getStatus(),
+                    order.getUpdatedAt() == null ? order.getCreatedAt() : order.getUpdatedAt(),
+                    null,
+                    order.getCancelReason()
+            ));
+        }
+
+        return timeline;
     }
 
     public OrderResponse getMine(String id) {
@@ -340,9 +398,58 @@ public class OrderService {
                 order.getTax(),
                 order.getTotal(),
                 order.isStockDeducted(),
+                order.getCancelReason(),
+                order.getHoldExpiresAt(),
                 order.getCreatedAt(),
                 order.getUpdatedAt()
         );
+    }
+
+    private OrderStatus parseOrderStatus(String rawStatus) {
+        if (rawStatus == null || rawStatus.isBlank()) {
+            return null;
+        }
+        try {
+            return OrderStatus.valueOf(rawStatus.trim().toUpperCase());
+        } catch (IllegalArgumentException ex) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Invalid status value: " + rawStatus);
+        }
+    }
+
+    private OrderStatus extractStatusFromAudit(Map<String, Object> metadata, String action, Map<String, Object> afterData) {
+        if (metadata != null) {
+            if (Objects.equals(action, AuditAction.STATUS_CHANGE.name())) {
+                OrderStatus status = parseOrderStatusOrNull(metadata.get("toStatus"));
+                if (status != null) {
+                    return status;
+                }
+            }
+            if (Objects.equals(action, AuditAction.CREATE.name())) {
+                OrderStatus status = parseOrderStatusOrNull(metadata.get("status"));
+                if (status != null) {
+                    return status;
+                }
+            }
+        }
+        if (afterData != null) {
+            return parseOrderStatusOrNull(afterData.get("status"));
+        }
+        return null;
+    }
+
+    private OrderStatus parseOrderStatusOrNull(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String text = value.toString();
+        if (text.isBlank()) {
+            return null;
+        }
+        try {
+            return OrderStatus.valueOf(text.trim().toUpperCase());
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
     }
 
     private String optionalCurrentUserId() {
