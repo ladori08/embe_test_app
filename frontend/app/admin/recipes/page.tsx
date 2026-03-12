@@ -34,6 +34,8 @@ export default function AdminRecipesPage() {
   const [error, setError] = useState('');
 
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
+  const [detailRecipe, setDetailRecipe] = useState<Recipe | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
   const [productId, setProductId] = useState('');
   const [yieldQty, setYieldQty] = useState(1);
   const [lines, setLines] = useState<RecipeLineForm[]>([emptyLine()]);
@@ -123,6 +125,18 @@ export default function AdminRecipesPage() {
         : [emptyLine()]
     );
     setTab('form');
+  };
+
+  const openDetail = (recipe: Recipe) => {
+    setDetailRecipe(recipe);
+    setDetailOpen(true);
+  };
+
+  const closeDetailModal = (nextOpen: boolean) => {
+    setDetailOpen(nextOpen);
+    if (!nextOpen) {
+      setDetailRecipe(null);
+    }
   };
 
   const openBulkImport = () => {
@@ -349,12 +363,12 @@ export default function AdminRecipesPage() {
                     </TableHeader>
                     <TableBody>
                       {recipes.map(recipe => (
-                        <TableRow key={recipe.id}>
+                        <TableRow key={recipe.id} className="cursor-pointer hover:bg-[#f8f1e8]/60" onClick={() => openDetail(recipe)}>
                           <TableCell>{recipe.productName || productName.get(recipe.productId)}</TableCell>
                           <TableCell>v{recipe.version ?? 1}</TableCell>
                           <TableCell>{recipe.yieldQty}</TableCell>
                           <TableCell>{recipe.items.length}</TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-right" onClick={event => event.stopPropagation()}>
                             <button className="mr-3 text-sm underline" onClick={() => openEdit(recipe)}>
                               {t('common.edit')}
                             </button>
@@ -433,6 +447,57 @@ export default function AdminRecipesPage() {
               </TabsContent>
             </Tabs>
           </Card>
+
+          <Dialog open={detailOpen} onOpenChange={closeDetailModal}>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>{t('admin.recipes.detailTitle')}</DialogTitle>
+              </DialogHeader>
+              {detailRecipe ? (
+                <div className="space-y-3">
+                  <FormField label={t('admin.recipes.product')}>
+                    <Input value={detailRecipe.productName || productName.get(detailRecipe.productId) || '-'} readOnly />
+                  </FormField>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <FormField label={t('admin.recipes.version')}>
+                      <Input value={`v${detailRecipe.version ?? 1}`} readOnly />
+                    </FormField>
+                    <FormField label={t('admin.recipes.yieldPerBatch')}>
+                      <Input value={String(detailRecipe.yieldQty)} readOnly />
+                    </FormField>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-sm font-semibold text-muted">{t('admin.recipes.ingredients')}</p>
+                    {detailRecipe.items.length === 0 ? (
+                      <p className="text-sm text-muted">{t('admin.recipes.noIngredients')}</p>
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>{t('admin.recipes.ingredients')}</TableHead>
+                            <TableHead>{t('admin.recipes.qty')}</TableHead>
+                            <TableHead>{t('admin.recipes.unit')}</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {detailRecipe.items.map((item, index) => {
+                            const ingredient = ingredientById.get(item.ingredientId);
+                            return (
+                              <TableRow key={`${detailRecipe.id}-${item.ingredientId}-${index}`}>
+                                <TableCell>{item.ingredientName || ingredient?.name || item.ingredientId}</TableCell>
+                                <TableCell>{item.qtyPerBatch}</TableCell>
+                                <TableCell>{item.unit || ingredient?.unit || '-'}</TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </DialogContent>
+          </Dialog>
 
           <Dialog open={importOpen} onOpenChange={closeImportModal}>
             <DialogContent className="max-w-2xl">

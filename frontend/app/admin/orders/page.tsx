@@ -177,12 +177,8 @@ export default function AdminOrdersPage() {
                 </TableHeader>
                 <TableBody>
                   {orders.map(order => (
-                    <TableRow key={order.id}>
-                      <TableCell>
-                        <button className="text-left text-sm underline" onClick={() => openDetail(order)}>
-                          {order.id.slice(0, 8)}...
-                        </button>
-                      </TableCell>
+                    <TableRow key={order.id} className="cursor-pointer hover:bg-[#f8f1e8]/60" onClick={() => openDetail(order)}>
+                      <TableCell>{order.id.slice(0, 8)}...</TableCell>
                       <TableCell>
                         <div>{order.userId ? `${order.userId.slice(0, 6)}...` : t('admin.orders.guest')}</div>
                         <div className="text-xs text-muted">
@@ -196,7 +192,7 @@ export default function AdminOrdersPage() {
                           <p className="text-xs text-red-600">{formatCancelReason(order.cancelReason)}</p>
                         ) : null}
                       </TableCell>
-                      <TableCell>
+                      <TableCell onClick={event => event.stopPropagation()}>
                         <div className="flex flex-wrap gap-2">
                           {getAvailableTransitions(order.status).map(target => (
                             <Button
