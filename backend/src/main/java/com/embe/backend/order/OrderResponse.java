@@ -17,6 +17,8 @@ public record OrderResponse(
         BigDecimal tax,
         BigDecimal total,
         boolean stockDeducted,
+        String cancelReason,
+        Instant holdExpiresAt,
         Instant createdAt,
         Instant updatedAt
 ) {

@@ -124,6 +124,19 @@ public class AuditLogService {
         return toDetail(log);
     }
 
+    public List<AuditLogDetailResponse> listByModuleAndEntityId(AuditModule module, String entityId) {
+        if (module == AuditModule.USER && !authService.hasRole(Role.SUPERADMIN)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "You do not have permission to view this history record");
+        }
+        if (entityId == null || entityId.isBlank()) {
+            return List.of();
+        }
+        return auditLogRepository.findByModuleAndEntityIdOrderByCreatedAtAsc(module, entityId.trim())
+                .stream()
+                .map(this::toDetail)
+                .toList();
+    }
+
     private AuditLogListItem toListItem(AuditLog log) {
         return new AuditLogListItem(
                 log.getId(),

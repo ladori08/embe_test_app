@@ -136,7 +136,17 @@ export interface Order {
   tax: number;
   total: number;
   stockDeducted: boolean;
+  cancelReason?: string | null;
+  holdExpiresAt?: string | null;
   createdAt: string;
+  updatedAt?: string | null;
+}
+
+export interface OrderStatusTimelineEntry {
+  status: OrderStatus;
+  changedAt: string;
+  actorEmail?: string | null;
+  cancelReason?: string | null;
 }
 
 export interface DashboardData {

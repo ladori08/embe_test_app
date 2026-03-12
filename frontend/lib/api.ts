@@ -7,6 +7,7 @@ import {
   Ingredient,
   IngredientTransaction,
   Order,
+  OrderStatusTimelineEntry,
   Product,
   ProductCategory,
   Recipe,
@@ -139,7 +140,15 @@ export const api = {
     }),
   listMyOrders: () => request<Order[]>('/api/orders'),
 
-  listOrdersAdmin: () => request<Order[]>('/api/admin/orders'),
+  listOrdersAdmin: (params: { status?: string; from?: string; to?: string } = {}) => {
+    const search = new URLSearchParams();
+    if (params.status) search.set('status', params.status);
+    if (params.from) search.set('from', params.from);
+    if (params.to) search.set('to', params.to);
+    const query = search.toString();
+    return request<Order[]>(`/api/admin/orders${query ? `?${query}` : ''}`);
+  },
+  getOrderTimelineAdmin: (id: string) => request<OrderStatusTimelineEntry[]>(`/api/admin/orders/${id}/timeline`),
   updateOrderStatus: (id: string, status: string) => request<Order>(`/api/admin/orders/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
 
   listUsersAdmin: () => request<AdminManagedUser[]>('/api/admin/users'),
