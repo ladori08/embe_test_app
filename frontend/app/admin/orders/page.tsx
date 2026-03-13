@@ -164,57 +164,59 @@ export default function AdminOrdersPage() {
             {orders.length === 0 ? (
               <p className="text-sm text-muted">{t('admin.orders.empty')}</p>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t('admin.orders.order')}</TableHead>
-                    <TableHead>{t('admin.orders.user')}</TableHead>
-                    <TableHead>{t('admin.orders.total')}</TableHead>
-                    <TableHead>{t('admin.orders.status')}</TableHead>
-                    <TableHead>{t('admin.orders.actions')}</TableHead>
-                    <TableHead>{t('admin.orders.created')}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {orders.map(order => (
-                    <TableRow key={order.id} className="cursor-pointer hover:bg-[#f8f1e8]/60" onClick={() => openDetail(order)}>
-                      <TableCell>{order.id.slice(0, 8)}...</TableCell>
-                      <TableCell>
-                        <div>{order.userId ? `${order.userId.slice(0, 6)}...` : t('admin.orders.guest')}</div>
-                        <div className="text-xs text-muted">
-                          {order.recipientName || '-'} · {order.recipientPhone || '-'}
-                        </div>
-                      </TableCell>
-                      <TableCell>{money(order.total)}</TableCell>
-                      <TableCell>
-                        <span className="text-sm">{t(`status.${order.status}`)}</span>
-                        {order.status === 'CANCELLED' ? (
-                          <p className="text-xs text-red-600">{formatCancelReason(order.cancelReason)}</p>
-                        ) : null}
-                      </TableCell>
-                      <TableCell onClick={event => event.stopPropagation()}>
-                        <div className="flex flex-wrap gap-2">
-                          {getAvailableTransitions(order.status).map(target => (
-                            <Button
-                              key={`${order.id}-${target}`}
-                              type="button"
-                              variant={target === 'CANCELLED' ? 'outline' : 'default'}
-                              className="h-8 px-3 text-xs"
-                              onClick={() => updateStatus(order.id, target)}
-                            >
-                              {t(actionLabelKey(target))}
-                            </Button>
-                          ))}
-                          {getAvailableTransitions(order.status).length === 0 ? (
-                            <span className="text-xs text-muted">{t('admin.orders.noActions')}</span>
-                          ) : null}
-                        </div>
-                      </TableCell>
-                      <TableCell>{new Date(order.createdAt).toLocaleString()}</TableCell>
+              <div className="max-h-[58vh] overflow-auto">
+                <Table>
+                  <TableHeader className="sticky top-0 z-20 bg-white">
+                    <TableRow>
+                      <TableHead className="bg-white">{t('admin.orders.order')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.orders.user')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.orders.total')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.orders.status')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.orders.actions')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.orders.created')}</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {orders.map(order => (
+                      <TableRow key={order.id} className="cursor-pointer hover:bg-[#f8f1e8]/60" onClick={() => openDetail(order)}>
+                        <TableCell>{order.id.slice(0, 8)}...</TableCell>
+                        <TableCell>
+                          <div>{order.userId ? `${order.userId.slice(0, 6)}...` : t('admin.orders.guest')}</div>
+                          <div className="text-xs text-muted">
+                            {order.recipientName || '-'} · {order.recipientPhone || '-'}
+                          </div>
+                        </TableCell>
+                        <TableCell>{money(order.total)}</TableCell>
+                        <TableCell>
+                          <span className="text-sm">{t(`status.${order.status}`)}</span>
+                          {order.status === 'CANCELLED' ? (
+                            <p className="text-xs text-red-600">{formatCancelReason(order.cancelReason)}</p>
+                          ) : null}
+                        </TableCell>
+                        <TableCell onClick={event => event.stopPropagation()}>
+                          <div className="flex flex-wrap gap-2">
+                            {getAvailableTransitions(order.status).map(target => (
+                              <Button
+                                key={`${order.id}-${target}`}
+                                type="button"
+                                variant={target === 'CANCELLED' ? 'outline' : 'default'}
+                                className="h-8 px-3 text-xs"
+                                onClick={() => updateStatus(order.id, target)}
+                              >
+                                {t(actionLabelKey(target))}
+                              </Button>
+                            ))}
+                            {getAvailableTransitions(order.status).length === 0 ? (
+                              <span className="text-xs text-muted">{t('admin.orders.noActions')}</span>
+                            ) : null}
+                          </div>
+                        </TableCell>
+                        <TableCell>{new Date(order.createdAt).toLocaleString()}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             )}
           </Card>
           <Dialog open={detailOpen} onOpenChange={setDetailOpen}>

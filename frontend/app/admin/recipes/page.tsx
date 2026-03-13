@@ -351,35 +351,37 @@ export default function AdminRecipesPage() {
                 {recipes.length === 0 ? (
                   <p className="text-sm text-muted">{t('admin.recipes.empty')}</p>
                 ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>{t('admin.recipes.product')}</TableHead>
-                        <TableHead>{t('admin.recipes.version')}</TableHead>
-                        <TableHead>{t('admin.recipes.yield')}</TableHead>
-                        <TableHead>{t('admin.recipes.ingredients')}</TableHead>
-                        <TableHead></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {recipes.map(recipe => (
-                        <TableRow key={recipe.id} className="cursor-pointer hover:bg-[#f8f1e8]/60" onClick={() => openDetail(recipe)}>
-                          <TableCell>{recipe.productName || productName.get(recipe.productId)}</TableCell>
-                          <TableCell>v{recipe.version ?? 1}</TableCell>
-                          <TableCell>{recipe.yieldQty}</TableCell>
-                          <TableCell>{recipe.items.length}</TableCell>
-                          <TableCell className="text-right" onClick={event => event.stopPropagation()}>
-                            <button className="mr-3 text-sm underline" onClick={() => openEdit(recipe)}>
-                              {t('common.edit')}
-                            </button>
-                            <button className="text-sm text-red-600 underline" onClick={() => remove(recipe.id)}>
-                              {t('common.delete')}
-                            </button>
-                          </TableCell>
+                  <div className="max-h-[58vh] overflow-auto">
+                    <Table>
+                      <TableHeader className="sticky top-0 z-20 bg-white">
+                        <TableRow>
+                          <TableHead className="bg-white">{t('admin.recipes.product')}</TableHead>
+                          <TableHead className="bg-white">{t('admin.recipes.version')}</TableHead>
+                          <TableHead className="bg-white">{t('admin.recipes.yield')}</TableHead>
+                          <TableHead className="bg-white">{t('admin.recipes.ingredients')}</TableHead>
+                          <TableHead className="bg-white"></TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {recipes.map(recipe => (
+                          <TableRow key={recipe.id} className="cursor-pointer hover:bg-[#f8f1e8]/60" onClick={() => openDetail(recipe)}>
+                            <TableCell>{recipe.productName || productName.get(recipe.productId)}</TableCell>
+                            <TableCell>v{recipe.version ?? 1}</TableCell>
+                            <TableCell>{recipe.yieldQty}</TableCell>
+                            <TableCell>{recipe.items.length}</TableCell>
+                            <TableCell className="text-right" onClick={event => event.stopPropagation()}>
+                              <button className="mr-3 text-sm underline" onClick={() => openEdit(recipe)}>
+                                {t('common.edit')}
+                              </button>
+                              <button className="text-sm text-red-600 underline" onClick={() => remove(recipe.id)}>
+                                {t('common.delete')}
+                              </button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
                 )}
               </TabsContent>
 

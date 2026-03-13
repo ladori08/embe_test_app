@@ -4,6 +4,7 @@ import com.embe.backend.auth.AuthService;
 import com.embe.backend.audit.AuditLogService;
 import com.embe.backend.common.ApiException;
 import com.embe.backend.ingredient.IngredientService;
+import com.embe.backend.product.ProductLotService;
 import com.embe.backend.product.ProductStockEventBroadcaster;
 import com.embe.backend.product.ProductService;
 import com.embe.backend.recipe.Recipe;
@@ -39,6 +40,8 @@ class BakeServiceTest {
     @Mock
     private ProductService productService;
     @Mock
+    private ProductLotService productLotService;
+    @Mock
     private ProductStockEventBroadcaster productStockEventBroadcaster;
     @Mock
     private AuthService authService;
@@ -55,6 +58,7 @@ class BakeServiceTest {
                 inventoryMutationService,
                 ingredientService,
                 productService,
+                productLotService,
                 productStockEventBroadcaster,
                 authService,
                 auditLogService

@@ -60,6 +60,10 @@ public class DashboardService {
                 continue;
             }
             for (var item : order.getItems()) {
+                if (item.getCost() != null && item.getCost().compareTo(BigDecimal.ZERO) > 0) {
+                    estimatedCost = estimatedCost.add(item.getCost());
+                    continue;
+                }
                 Product product = productCostIndex.get(item.getProductId());
                 BigDecimal cost = product == null || product.getCost() == null ? BigDecimal.ZERO : product.getCost();
                 estimatedCost = estimatedCost.add(cost.multiply(item.getQty()));

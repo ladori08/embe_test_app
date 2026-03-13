@@ -9,6 +9,7 @@ import {
   Order,
   OrderStatusTimelineEntry,
   Product,
+  ProductLot,
   ProductCategory,
   Recipe,
   Role,
@@ -120,6 +121,7 @@ export const api = {
   deleteProductCategory: (id: string) => request<void>(`/api/admin/product-categories/${id}`, { method: 'DELETE' }),
   nextProductSku: (category: string) =>
     request<{ sku: string }>(`/api/admin/products/next-sku?category=${encodeURIComponent(category)}`),
+  listProductLotsAdmin: (id: string) => request<ProductLot[]>(`/api/admin/products/${id}/lots`),
   createProduct: (payload: Partial<Product>) => request<Product>('/api/admin/products', { method: 'POST', body: JSON.stringify(payload) }),
   updateProduct: (id: string, payload: Partial<Product>) => request<Product>(`/api/admin/products/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
   deleteProduct: (id: string) => request<void>(`/api/admin/products/${id}`, { method: 'DELETE' }),

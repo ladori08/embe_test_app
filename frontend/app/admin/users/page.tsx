@@ -174,43 +174,45 @@ export default function AdminUsersPage() {
             ) : sortedUsers.length === 0 ? (
               <p className="text-sm text-muted">{t('admin.users.empty')}</p>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t('admin.users.fullName')}</TableHead>
-                    <TableHead>{t('admin.users.email')}</TableHead>
-                    <TableHead>{t('admin.users.roles')}</TableHead>
-                    <TableHead>{t('admin.users.createdAt')}</TableHead>
-                    <TableHead></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sortedUsers.map(managedUser => {
-                    const isCurrentUser = managedUser.id === currentUser?.id;
-                    return (
-                      <TableRow key={managedUser.id}>
-                        <TableCell>{managedUser.fullName}</TableCell>
-                        <TableCell>{managedUser.email}</TableCell>
-                        <TableCell>{managedUser.roles.map(role => toDisplayRole(role)).join(', ')}</TableCell>
-                        <TableCell>{new Date(managedUser.createdAt).toLocaleString()}</TableCell>
-                        <TableCell className="text-right">
-                          <button className="mr-3 text-sm underline" onClick={() => openEdit(managedUser)}>
-                            {t('common.edit')}
-                          </button>
-                          <button
-                            className="text-sm text-red-600 underline disabled:text-muted"
-                            onClick={() => remove(managedUser.id)}
-                            disabled={isCurrentUser}
-                            title={isCurrentUser ? t('admin.users.cannotDeleteSelf') : ''}
-                          >
-                            {t('common.delete')}
-                          </button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+              <div className="max-h-[58vh] overflow-auto">
+                <Table>
+                  <TableHeader className="sticky top-0 z-20 bg-white">
+                    <TableRow>
+                      <TableHead className="bg-white">{t('admin.users.fullName')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.users.email')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.users.roles')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.users.createdAt')}</TableHead>
+                      <TableHead className="bg-white"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {sortedUsers.map(managedUser => {
+                      const isCurrentUser = managedUser.id === currentUser?.id;
+                      return (
+                        <TableRow key={managedUser.id}>
+                          <TableCell>{managedUser.fullName}</TableCell>
+                          <TableCell>{managedUser.email}</TableCell>
+                          <TableCell>{managedUser.roles.map(role => toDisplayRole(role)).join(', ')}</TableCell>
+                          <TableCell>{new Date(managedUser.createdAt).toLocaleString()}</TableCell>
+                          <TableCell className="text-right">
+                            <button className="mr-3 text-sm underline" onClick={() => openEdit(managedUser)}>
+                              {t('common.edit')}
+                            </button>
+                            <button
+                              className="text-sm text-red-600 underline disabled:text-muted"
+                              onClick={() => remove(managedUser.id)}
+                              disabled={isCurrentUser}
+                              title={isCurrentUser ? t('admin.users.cannotDeleteSelf') : ''}
+                            >
+                              {t('common.delete')}
+                            </button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
             )}
           </Card>
 

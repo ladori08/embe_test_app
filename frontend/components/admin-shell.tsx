@@ -22,7 +22,7 @@ export function AdminShell({ children, title }: { children: React.ReactNode; tit
 
   return (
     <div className="mx-auto grid max-w-7xl grid-cols-1 gap-6 px-4 py-6 lg:grid-cols-[220px_1fr]">
-      <aside className="rounded-2xl border border-border bg-white p-3 shadow-card">
+      <aside className="rounded-2xl border border-border bg-white p-3 shadow-card lg:sticky lg:top-[88px] lg:max-h-[calc(100vh-104px)] lg:self-start lg:overflow-auto">
         <h2 className="px-2 pb-2 text-sm font-semibold uppercase tracking-wide text-muted">{t('admin.panel')}</h2>
         <div className="space-y-1">
           {links.map(link => (

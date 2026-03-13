@@ -67,6 +67,31 @@ export interface ProductCategory {
   legacySkus?: string[];
 }
 
+export interface ProductLotAllocation {
+  lotCode: string;
+  qty: number;
+  unitCost?: number | null;
+  subtotalCost?: number | null;
+  producedAt?: string | null;
+  reference?: string | null;
+}
+
+export interface ProductLot {
+  id: string;
+  productId: string;
+  lotCode: string;
+  bakeRecordId?: string | null;
+  recipeVersion?: number | null;
+  producedQty: number;
+  remainingQty: number;
+  unitCost?: number | null;
+  totalCost?: number | null;
+  producedAt: string;
+  note?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
 export interface RecipeItem {
   ingredientId: string;
   ingredientName?: string;

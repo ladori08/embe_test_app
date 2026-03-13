@@ -11,6 +11,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.text.Normalizer;
 import java.time.Instant;
 import java.util.Comparator;
@@ -31,6 +32,7 @@ public class ProductService {
     private final RecipeRepository recipeRepository;
     private final AuditLogService auditLogService;
     private final ProductStockEventBroadcaster productStockEventBroadcaster;
+    private final ProductLotService productLotService;
 
     public ProductService(
             ProductRepository productRepository,
@@ -38,7 +40,8 @@ public class ProductService {
             ProductCategoryService productCategoryService,
             RecipeRepository recipeRepository,
             AuditLogService auditLogService,
-            ProductStockEventBroadcaster productStockEventBroadcaster
+            ProductStockEventBroadcaster productStockEventBroadcaster,
+            ProductLotService productLotService
     ) {
         this.productRepository = productRepository;
         this.productStockLogRepository = productStockLogRepository;
@@ -46,6 +49,7 @@ public class ProductService {
         this.recipeRepository = recipeRepository;
         this.auditLogService = auditLogService;
         this.productStockEventBroadcaster = productStockEventBroadcaster;
+        this.productLotService = productLotService;
     }
 
     public List<ProductResponse> listAll() {
@@ -73,7 +77,7 @@ public class ProductService {
     public ProductResponse create(ProductRequest request) {
         String categoryName = productCategoryService.requireExistingCategoryName(request.category());
         Product product = new Product();
-        applyCommonFields(product, request, categoryName);
+        applyCreateFields(product, request, categoryName);
         Instant now = Instant.now();
         product.setCreatedAt(now);
         product.setUpdatedAt(now);
@@ -115,7 +119,7 @@ public class ProductService {
         Product product = getEntity(id);
         ProductResponse before = toResponse(product);
         String categoryName = productCategoryService.requireExistingCategoryNameOrCurrent(request.category(), product.getCategory());
-        applyCommonFields(product, request, categoryName);
+        applyUpdateFields(product, request, categoryName);
         product.setUpdatedAt(Instant.now());
 
         if (Boolean.TRUE.equals(request.regenerateSku())) {
@@ -190,16 +194,55 @@ public class ProductService {
         productRepository.save(product);
     }
 
+    public void applyProductionCost(String productId, BigDecimal producedQty, BigDecimal producedUnitCost) {
+        BigDecimal incomingQty = producedQty == null ? BigDecimal.ZERO : producedQty;
+        if (incomingQty.compareTo(BigDecimal.ZERO) <= 0) {
+            return;
+        }
+
+        Product product = getEntity(productId);
+        BigDecimal currentStock = product.getCurrentStock() == null ? BigDecimal.ZERO : product.getCurrentStock();
+        BigDecimal previousStock = currentStock.subtract(incomingQty);
+        if (previousStock.compareTo(BigDecimal.ZERO) < 0) {
+            previousStock = BigDecimal.ZERO;
+        }
+
+        BigDecimal previousCost = product.getCost() == null ? BigDecimal.ZERO : product.getCost();
+        BigDecimal incomingCost = producedUnitCost == null ? BigDecimal.ZERO : producedUnitCost;
+        BigDecimal denominator = previousStock.add(incomingQty);
+        BigDecimal weightedCost = denominator.compareTo(BigDecimal.ZERO) > 0
+                ? previousStock.multiply(previousCost).add(incomingQty.multiply(incomingCost)).divide(denominator, 6, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
+
+        product.setCost(weightedCost);
+        product.setUpdatedAt(Instant.now());
+        productRepository.save(product);
+    }
+
+    public List<ProductLotResponse> listLots(String productId) {
+        getEntity(productId);
+        return productLotService.listByProductId(productId);
+    }
+
     public Product getEntity(String id) {
         return productRepository.findById(id)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Product not found"));
     }
 
-    private void applyCommonFields(Product product, ProductRequest request, String categoryName) {
+    private void applyCreateFields(Product product, ProductRequest request, String categoryName) {
         product.setName(request.name().trim());
         product.setCategory(categoryName);
         product.setPrice(request.price());
-        product.setCost(request.cost() == null ? BigDecimal.ZERO : request.cost());
+        product.setCost(BigDecimal.ZERO);
+        product.setCurrentStock(request.currentStock());
+        product.setActive(request.isActive() == null || request.isActive());
+        product.setImages(request.images());
+    }
+
+    private void applyUpdateFields(Product product, ProductRequest request, String categoryName) {
+        product.setName(request.name().trim());
+        product.setCategory(categoryName);
+        product.setPrice(request.price());
         product.setCurrentStock(request.currentStock());
         product.setActive(request.isActive() == null || request.isActive());
         product.setImages(request.images());

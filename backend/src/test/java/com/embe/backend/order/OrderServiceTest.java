@@ -4,6 +4,7 @@ import com.embe.backend.auth.AuthService;
 import com.embe.backend.audit.AuditLogService;
 import com.embe.backend.common.ApiException;
 import com.embe.backend.product.Product;
+import com.embe.backend.product.ProductLotService;
 import com.embe.backend.product.ProductStockEventBroadcaster;
 import com.embe.backend.product.ProductService;
 import com.embe.backend.stock.InventoryMutationService;
@@ -31,6 +32,8 @@ class OrderServiceTest {
     @Mock
     private ProductService productService;
     @Mock
+    private ProductLotService productLotService;
+    @Mock
     private InventoryMutationService inventoryMutationService;
     @Mock
     private AuthService authService;
@@ -43,7 +46,7 @@ class OrderServiceTest {
 
     @BeforeEach
     void setUp() {
-        orderService = new OrderService(orderRepository, productService, inventoryMutationService, authService, auditLogService, productStockEventBroadcaster, null);
+        orderService = new OrderService(orderRepository, productService, productLotService, inventoryMutationService, authService, auditLogService, productStockEventBroadcaster, null);
     }
 
     @Test
@@ -58,6 +61,8 @@ class OrderServiceTest {
         when(authService.currentUserId()).thenReturn("u1");
         when(productService.getEntity("p1")).thenReturn(product);
         when(inventoryMutationService.deductProductIfEnough("p1", new BigDecimal("2"))).thenReturn(true);
+        when(productLotService.consumeLots("p1", new BigDecimal("2"))).thenReturn(List.of());
+        when(productLotService.estimateCost(any())).thenReturn(BigDecimal.ZERO);
         when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> {
             Order order = invocation.getArgument(0);
             order.setId("o1");
@@ -117,6 +122,8 @@ class OrderServiceTest {
         when(authService.currentUserId()).thenReturn("u1");
         when(productService.getEntity("p1")).thenReturn(product);
         when(inventoryMutationService.deductProductIfEnough("p1", new BigDecimal("3"))).thenReturn(true);
+        when(productLotService.consumeLots("p1", new BigDecimal("3"))).thenReturn(List.of());
+        when(productLotService.estimateCost(any())).thenReturn(BigDecimal.ZERO);
         when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> {
             Order order = invocation.getArgument(0);
             order.setId("o1");
@@ -162,6 +169,8 @@ class OrderServiceTest {
 
         when(orderRepository.findById("o1")).thenReturn(Optional.of(order));
         when(inventoryMutationService.deductProductIfEnough(eq("p1"), eq(new BigDecimal("2")))).thenReturn(true);
+        when(productLotService.consumeLots("p1", new BigDecimal("2"))).thenReturn(List.of());
+        when(productLotService.estimateCost(any())).thenReturn(BigDecimal.ZERO);
         Product updatedProduct = new Product();
         updatedProduct.setId("p1");
         updatedProduct.setCurrentStock(new BigDecimal("8"));
