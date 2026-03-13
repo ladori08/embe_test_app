@@ -7,6 +7,8 @@ import com.embe.backend.audit.AuditLogService;
 import com.embe.backend.audit.AuditModule;
 import com.embe.backend.common.ApiException;
 import com.embe.backend.product.Product;
+import com.embe.backend.product.ProductLotAllocation;
+import com.embe.backend.product.ProductLotService;
 import com.embe.backend.product.ProductStockEventBroadcaster;
 import com.embe.backend.product.ProductService;
 import com.embe.backend.product.ProductStockLogType;
@@ -51,6 +53,7 @@ public class OrderService {
 
     private final OrderRepository orderRepository;
     private final ProductService productService;
+    private final ProductLotService productLotService;
     private final InventoryMutationService inventoryMutationService;
     private final AuthService authService;
     private final AuditLogService auditLogService;
@@ -61,6 +64,7 @@ public class OrderService {
     public OrderService(
             OrderRepository orderRepository,
             ProductService productService,
+            ProductLotService productLotService,
             InventoryMutationService inventoryMutationService,
             AuthService authService,
             AuditLogService auditLogService,
@@ -69,6 +73,7 @@ public class OrderService {
     ) {
         this.orderRepository = orderRepository;
         this.productService = productService;
+        this.productLotService = productLotService;
         this.inventoryMutationService = inventoryMutationService;
         this.authService = authService;
         this.auditLogService = auditLogService;
@@ -165,12 +170,15 @@ public class OrderService {
                 continue;
             }
             changedProductIds.add(product.getId());
+            List<ProductLotAllocation> lotAllocations = productLotService.consumeLots(product.getId(), requestedQty);
 
             OrderItem item = new OrderItem();
             item.setProductId(product.getId());
             item.setName(product.getName());
             item.setPrice(product.getPrice());
             item.setQty(requestedQty);
+            item.setLotAllocations(lotAllocations);
+            item.setCost(productLotService.estimateCost(lotAllocations));
             items.add(item);
         }
 
@@ -333,6 +341,9 @@ public class OrderService {
                 if (!ok) {
                     throw new ApiException(HttpStatus.CONFLICT, "Insufficient product stock for " + item.getName());
                 }
+                List<ProductLotAllocation> lotAllocations = productLotService.consumeLots(item.getProductId(), item.getQty());
+                item.setLotAllocations(lotAllocations);
+                item.setCost(productLotService.estimateCost(lotAllocations));
                 productService.saveStockLog(item.getProductId(), ProductStockLogType.OUT, item.getQty(), "Order confirmed", order.getId(), currentUser());
                 changedProductIds.add(item.getProductId());
             }
@@ -569,6 +580,7 @@ public class OrderService {
 
         for (OrderItem item : order.getItems()) {
             inventoryMutationService.addProduct(item.getProductId(), item.getQty());
+            productLotService.restoreLots(item.getProductId(), item.getLotAllocations(), "Order restore " + order.getId());
             productService.saveStockLog(item.getProductId(), ProductStockLogType.RESTORE, item.getQty(), stockLogNote, order.getId(), actor);
             changedProductIds.add(item.getProductId());
         }

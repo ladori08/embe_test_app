@@ -38,6 +38,8 @@ class ProductServiceTest {
     private AuditLogService auditLogService;
     @Mock
     private ProductStockEventBroadcaster productStockEventBroadcaster;
+    @Mock
+    private ProductLotService productLotService;
 
     private ProductService productService;
 
@@ -49,7 +51,8 @@ class ProductServiceTest {
                 productCategoryService,
                 recipeRepository,
                 auditLogService,
-                productStockEventBroadcaster
+                productStockEventBroadcaster,
+                productLotService
         );
     }
 
@@ -101,6 +104,7 @@ class ProductServiceTest {
         ));
 
         assertEquals("CPDAH-00003", response.sku());
+        assertEquals(BigDecimal.ZERO, response.cost());
         verify(productRepository, times(2)).save(any(Product.class));
     }
 
@@ -110,6 +114,7 @@ class ProductServiceTest {
         existing.setId("p1");
         existing.setSku("CAFFE-00012");
         existing.setCategory("Coffee");
+        existing.setCost(new BigDecimal("5.55"));
         existing.setCreatedAt(Instant.now());
         existing.setUpdatedAt(Instant.now());
         when(productCategoryService.requireExistingCategoryNameOrCurrent("Coffee", "Coffee")).thenReturn("Coffee");
@@ -130,6 +135,7 @@ class ProductServiceTest {
         ));
 
         assertEquals("CAFFE-00012", response.sku());
+        assertEquals(new BigDecimal("5.55"), response.cost());
         verify(productRepository).findBySkuIgnoreCase(eq("CAFFE-00012"));
     }
 

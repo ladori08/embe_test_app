@@ -695,120 +695,122 @@ export default function AdminIngredientsPage() {
             ) : items.length === 0 ? (
               <p className="text-sm text-muted">{t('admin.ingredients.empty')}</p>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t('admin.ingredients.name')}</TableHead>
-                    <TableHead>
-                      <div className="space-y-1">
-                        <p>{t('admin.ingredients.unit')}</p>
-                        <Select value={unitDisplayMode} onChange={e => setUnitDisplayMode(e.target.value as UnitDisplayMode)}>
-                          <option value="small">{t('admin.ingredients.unitSmall')}</option>
-                          <option value="large">{t('admin.ingredients.unitLarge')}</option>
-                        </Select>
-                      </div>
-                    </TableHead>
-                    <TableHead>{t('admin.ingredients.stock')}</TableHead>
-                    <TableHead>{t('admin.ingredients.reorder')}</TableHead>
-                    <TableHead></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {items.map(item => {
-                    const isExpanded = !!expandedLots[item.id];
-                    const lots = lotsByIngredient[item.id] || [];
-                    const isLotLoading = !!lotLoading[item.id];
-                    const lotLoadError = lotError[item.id] || '';
-                    return [
-                      <TableRow key={item.id} className="cursor-pointer hover:bg-[#f8f1e8]/60" onClick={() => openDetail(item)}>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                className="rounded-md border border-border bg-white px-2 py-0.5 text-xs text-muted hover:bg-[#f5ede3] hover:text-ink"
-                                onClick={event => {
-                                  event.stopPropagation();
-                                  toggleLots(item.id);
-                                }}
-                              >
-                                {isExpanded ? '▾' : '▸'}
-                              </button>
-                              <span>{item.name}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell>{convertUnit(item.unit, unitDisplayMode)}</TableCell>
-                          <TableCell>{formatQty(convertQty(Number(item.currentStock || 0), item.unit, unitDisplayMode))}</TableCell>
-                          <TableCell>{formatQty(convertQty(Number(item.reorderLevel || 0), item.unit, unitDisplayMode))}</TableCell>
-                          <TableCell className="text-right" onClick={event => event.stopPropagation()}>
-                            <button className="mr-3 text-sm underline" onClick={() => openRestock(item)}>
-                              {t('admin.ingredients.restock')}
-                            </button>
-                            <button className="mr-3 text-sm underline" onClick={() => openEdit(item)}>
-                              {t('common.edit')}
-                            </button>
-                            <button className="text-sm text-red-600 underline" onClick={() => remove(item.id)}>
-                              {t('common.delete')}
-                            </button>
-                          </TableCell>
-                      </TableRow>,
-                      isExpanded ? (
-                          <TableRow key={`${item.id}-lots`} className="bg-[#fbf7f0]">
-                            <TableCell colSpan={5}>
-                              <div className="space-y-2">
-                                <p className="text-sm font-semibold text-muted">{t('admin.ingredients.lotsTitle')}</p>
-                                {isLotLoading ? (
-                                  <p className="text-sm text-muted">{t('admin.ingredients.lotLoading')}</p>
-                                ) : lotLoadError ? (
-                                  <p className="text-sm text-red-600">{lotLoadError}</p>
-                                ) : lots.length === 0 ? (
-                                  <p className="text-sm text-muted">{t('admin.ingredients.lotEmpty')}</p>
-                                ) : (
-                                  <Table>
-                                    <TableHeader>
-                                      <TableRow>
-                                        <TableHead>{t('admin.ingredients.lotCode')}</TableHead>
-                                        <TableHead>{t('admin.ingredients.lotReceivedAt')}</TableHead>
-                                        <TableHead>{t('admin.ingredients.lotReceivedQty')}</TableHead>
-                                        <TableHead>{t('admin.ingredients.lotRemainingQty')}</TableHead>
-                                        <TableHead>{t('admin.ingredients.lotUnitCost')}</TableHead>
-                                        <TableHead>{t('admin.ingredients.lotTotalCost')}</TableHead>
-                                        <TableHead>{t('admin.ingredients.lotReference')}</TableHead>
-                                      </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                      {lots.map(lot => {
-                                        const receivedQty = Number(lot.qty || 0);
-                                        const remainingQty = Number(lot.remainingQty || 0);
-                                        const unitCost = Number(lot.unitCost || 0);
-                                        return (
-                                          <TableRow key={lot.id}>
-                                            <TableCell>{lot.lotCode || '-'}</TableCell>
-                                            <TableCell>{new Date(lot.createdAt).toLocaleString()}</TableCell>
-                                            <TableCell>
-                                              {formatQty(convertQty(receivedQty, lot.ingredientUnit || item.unit, unitDisplayMode))}{' '}
-                                              {convertUnit(lot.ingredientUnit || item.unit, unitDisplayMode)}
-                                            </TableCell>
-                                            <TableCell>
-                                              {formatQty(convertQty(remainingQty, lot.ingredientUnit || item.unit, unitDisplayMode))}{' '}
-                                              {convertUnit(lot.ingredientUnit || item.unit, unitDisplayMode)}
-                                            </TableCell>
-                                            <TableCell>{lot.unitCost == null ? '-' : formatCost(unitCost)}</TableCell>
-                                            <TableCell>{lot.unitCost == null ? '-' : formatCost(receivedQty * unitCost)}</TableCell>
-                                            <TableCell>{lot.note || '-'}</TableCell>
-                                          </TableRow>
-                                        );
-                                      })}
-                                    </TableBody>
-                                  </Table>
-                                )}
+              <div className="max-h-[58vh] overflow-auto">
+                <Table>
+                  <TableHeader className="sticky top-0 z-20 bg-white">
+                    <TableRow>
+                      <TableHead className="bg-white">{t('admin.ingredients.name')}</TableHead>
+                      <TableHead className="bg-white">
+                        <div className="space-y-1">
+                          <p>{t('admin.ingredients.unit')}</p>
+                          <Select value={unitDisplayMode} onChange={e => setUnitDisplayMode(e.target.value as UnitDisplayMode)}>
+                            <option value="small">{t('admin.ingredients.unitSmall')}</option>
+                            <option value="large">{t('admin.ingredients.unitLarge')}</option>
+                          </Select>
+                        </div>
+                      </TableHead>
+                      <TableHead className="bg-white">{t('admin.ingredients.stock')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.ingredients.reorder')}</TableHead>
+                      <TableHead className="bg-white"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {items.map(item => {
+                      const isExpanded = !!expandedLots[item.id];
+                      const lots = lotsByIngredient[item.id] || [];
+                      const isLotLoading = !!lotLoading[item.id];
+                      const lotLoadError = lotError[item.id] || '';
+                      return [
+                        <TableRow key={item.id} className="cursor-pointer hover:bg-[#f8f1e8]/60" onClick={() => openDetail(item)}>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  className="rounded-md border border-border bg-white px-2 py-0.5 text-xs text-muted hover:bg-[#f5ede3] hover:text-ink"
+                                  onClick={event => {
+                                    event.stopPropagation();
+                                    toggleLots(item.id);
+                                  }}
+                                >
+                                  {isExpanded ? '▾' : '▸'}
+                                </button>
+                                <span>{item.name}</span>
                               </div>
                             </TableCell>
-                          </TableRow>
-                        ) : null
-                    ];
-                  })}
-                </TableBody>
-              </Table>
+                            <TableCell>{convertUnit(item.unit, unitDisplayMode)}</TableCell>
+                            <TableCell>{formatQty(convertQty(Number(item.currentStock || 0), item.unit, unitDisplayMode))}</TableCell>
+                            <TableCell>{formatQty(convertQty(Number(item.reorderLevel || 0), item.unit, unitDisplayMode))}</TableCell>
+                            <TableCell className="text-right" onClick={event => event.stopPropagation()}>
+                              <button className="mr-3 text-sm underline" onClick={() => openRestock(item)}>
+                                {t('admin.ingredients.restock')}
+                              </button>
+                              <button className="mr-3 text-sm underline" onClick={() => openEdit(item)}>
+                                {t('common.edit')}
+                              </button>
+                              <button className="text-sm text-red-600 underline" onClick={() => remove(item.id)}>
+                                {t('common.delete')}
+                              </button>
+                            </TableCell>
+                        </TableRow>,
+                        isExpanded ? (
+                            <TableRow key={`${item.id}-lots`} className="bg-[#fbf7f0]">
+                              <TableCell colSpan={5}>
+                                <div className="space-y-2">
+                                  <p className="text-sm font-semibold text-muted">{t('admin.ingredients.lotsTitle')}</p>
+                                  {isLotLoading ? (
+                                    <p className="text-sm text-muted">{t('admin.ingredients.lotLoading')}</p>
+                                  ) : lotLoadError ? (
+                                    <p className="text-sm text-red-600">{lotLoadError}</p>
+                                  ) : lots.length === 0 ? (
+                                    <p className="text-sm text-muted">{t('admin.ingredients.lotEmpty')}</p>
+                                  ) : (
+                                    <Table>
+                                      <TableHeader>
+                                        <TableRow>
+                                          <TableHead>{t('admin.ingredients.lotCode')}</TableHead>
+                                          <TableHead>{t('admin.ingredients.lotReceivedAt')}</TableHead>
+                                          <TableHead>{t('admin.ingredients.lotReceivedQty')}</TableHead>
+                                          <TableHead>{t('admin.ingredients.lotRemainingQty')}</TableHead>
+                                          <TableHead>{t('admin.ingredients.lotUnitCost')}</TableHead>
+                                          <TableHead>{t('admin.ingredients.lotTotalCost')}</TableHead>
+                                          <TableHead>{t('admin.ingredients.lotReference')}</TableHead>
+                                        </TableRow>
+                                      </TableHeader>
+                                      <TableBody>
+                                        {lots.map(lot => {
+                                          const receivedQty = Number(lot.qty || 0);
+                                          const remainingQty = Number(lot.remainingQty || 0);
+                                          const unitCost = Number(lot.unitCost || 0);
+                                          return (
+                                            <TableRow key={lot.id}>
+                                              <TableCell>{lot.lotCode || '-'}</TableCell>
+                                              <TableCell>{new Date(lot.createdAt).toLocaleString()}</TableCell>
+                                              <TableCell>
+                                                {formatQty(convertQty(receivedQty, lot.ingredientUnit || item.unit, unitDisplayMode))}{' '}
+                                                {convertUnit(lot.ingredientUnit || item.unit, unitDisplayMode)}
+                                              </TableCell>
+                                              <TableCell>
+                                                {formatQty(convertQty(remainingQty, lot.ingredientUnit || item.unit, unitDisplayMode))}{' '}
+                                                {convertUnit(lot.ingredientUnit || item.unit, unitDisplayMode)}
+                                              </TableCell>
+                                              <TableCell>{lot.unitCost == null ? '-' : formatCost(unitCost)}</TableCell>
+                                              <TableCell>{lot.unitCost == null ? '-' : formatCost(receivedQty * unitCost)}</TableCell>
+                                              <TableCell>{lot.note || '-'}</TableCell>
+                                            </TableRow>
+                                          );
+                                        })}
+                                      </TableBody>
+                                    </Table>
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ) : null
+                      ];
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
             )}
           </Card>
 
@@ -839,38 +841,40 @@ export default function AdminIngredientsPage() {
             ) : transactions.length === 0 ? (
               <p className="text-sm text-muted">{t('admin.ingredients.txEmpty')}</p>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t('admin.ingredients.txTime')}</TableHead>
-                    <TableHead>{t('admin.ingredients.name')}</TableHead>
-                    <TableHead>{t('admin.ingredients.txAction')}</TableHead>
-                    <TableHead>{t('admin.ingredients.txQty')}</TableHead>
-                    <TableHead>{t('admin.ingredients.unit')}</TableHead>
-                    <TableHead>{t('admin.ingredients.txLot')}</TableHead>
-                    <TableHead>{t('admin.ingredients.txRemaining')}</TableHead>
-                    <TableHead>{t('admin.ingredients.restockNote')}</TableHead>
-                    <TableHead>{t('admin.ingredients.txBy')}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {transactions.map(tx => (
-                    <TableRow key={tx.id}>
-                      <TableCell>{new Date(tx.createdAt).toLocaleString()}</TableCell>
-                      <TableCell>{tx.ingredientName}</TableCell>
-                      <TableCell>{tx.type}</TableCell>
-                      <TableCell>{formatQty(convertQty(Number(tx.qty || 0), tx.ingredientUnit, unitDisplayMode))}</TableCell>
-                      <TableCell>{convertUnit(tx.ingredientUnit, unitDisplayMode)}</TableCell>
-                      <TableCell>
-                        {tx.type === 'IN' ? tx.lotCode || '-' : formatAllocation(tx.allocations, tx.ingredientUnit)}
-                      </TableCell>
-                      <TableCell>{tx.remainingQty == null ? '-' : formatQty(convertQty(Number(tx.remainingQty), tx.ingredientUnit, unitDisplayMode))}</TableCell>
-                      <TableCell>{tx.note || '-'}</TableCell>
-                      <TableCell>{tx.createdBy || 'system'}</TableCell>
+              <div className="max-h-[58vh] overflow-auto">
+                <Table>
+                  <TableHeader className="sticky top-0 z-20 bg-white">
+                    <TableRow>
+                      <TableHead className="bg-white">{t('admin.ingredients.txTime')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.ingredients.name')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.ingredients.txAction')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.ingredients.txQty')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.ingredients.unit')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.ingredients.txLot')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.ingredients.txRemaining')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.ingredients.restockNote')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.ingredients.txBy')}</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {transactions.map(tx => (
+                      <TableRow key={tx.id}>
+                        <TableCell>{new Date(tx.createdAt).toLocaleString()}</TableCell>
+                        <TableCell>{tx.ingredientName}</TableCell>
+                        <TableCell>{tx.type}</TableCell>
+                        <TableCell>{formatQty(convertQty(Number(tx.qty || 0), tx.ingredientUnit, unitDisplayMode))}</TableCell>
+                        <TableCell>{convertUnit(tx.ingredientUnit, unitDisplayMode)}</TableCell>
+                        <TableCell>
+                          {tx.type === 'IN' ? tx.lotCode || '-' : formatAllocation(tx.allocations, tx.ingredientUnit)}
+                        </TableCell>
+                        <TableCell>{tx.remainingQty == null ? '-' : formatQty(convertQty(Number(tx.remainingQty), tx.ingredientUnit, unitDisplayMode))}</TableCell>
+                        <TableCell>{tx.note || '-'}</TableCell>
+                        <TableCell>{tx.createdBy || 'system'}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             )}
           </Card>
 

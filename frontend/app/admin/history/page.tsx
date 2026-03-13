@@ -113,28 +113,30 @@ export default function AdminHistoryPage() {
             ) : logs.length === 0 ? (
               <p className="text-sm text-muted">{t('admin.history.empty')}</p>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t('admin.history.title')}</TableHead>
-                    <TableHead>{t('admin.history.module')}</TableHead>
-                    <TableHead>{t('admin.history.action')}</TableHead>
-                    <TableHead>{t('admin.history.actor')}</TableHead>
-                    <TableHead>{t('admin.history.time')}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {logs.map(log => (
-                    <TableRow key={log.id} className="cursor-pointer hover:bg-[#f8f1e8]/60" onClick={() => openDetail(log.id)}>
-                      <TableCell>{log.title}</TableCell>
-                      <TableCell>{log.module}</TableCell>
-                      <TableCell>{log.action}</TableCell>
-                      <TableCell>{log.actorEmail || 'system'}</TableCell>
-                      <TableCell>{new Date(log.createdAt).toLocaleString()}</TableCell>
+              <div className="max-h-[58vh] overflow-auto">
+                <Table>
+                  <TableHeader className="sticky top-0 z-20 bg-white">
+                    <TableRow>
+                      <TableHead className="bg-white">{t('admin.history.title')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.history.module')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.history.action')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.history.actor')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.history.time')}</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {logs.map(log => (
+                      <TableRow key={log.id} className="cursor-pointer hover:bg-[#f8f1e8]/60" onClick={() => openDetail(log.id)}>
+                        <TableCell>{log.title}</TableCell>
+                        <TableCell>{log.module}</TableCell>
+                        <TableCell>{log.action}</TableCell>
+                        <TableCell>{log.actorEmail || 'system'}</TableCell>
+                        <TableCell>{new Date(log.createdAt).toLocaleString()}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             )}
           </Card>
 
