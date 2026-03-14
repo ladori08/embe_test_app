@@ -21,6 +21,9 @@ embe:
     secret: ${JWT_SECRET:0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF}
     expirationMinutes: 240
     cookieName: EMBE_TOKEN
+  database-console:
+    backup-dir: ${DATABASE_BACKUP_DIR:backups/database-console}
+    session-ttl-minutes: ${DATABASE_SESSION_TTL_MINUTES:30}
 
 logging:
   level:
