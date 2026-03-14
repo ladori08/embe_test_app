@@ -9,10 +9,16 @@ public record OrderResponse(
         String userId,
         List<OrderItemResponse> items,
         OrderStatus status,
+        String recipientName,
+        String recipientPhone,
+        String deliveryAddress,
+        String note,
         BigDecimal subtotal,
         BigDecimal tax,
         BigDecimal total,
         boolean stockDeducted,
+        String cancelReason,
+        Instant holdExpiresAt,
         Instant createdAt,
         Instant updatedAt
 ) {

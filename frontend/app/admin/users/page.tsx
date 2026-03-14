@@ -66,22 +66,37 @@ export default function AdminUsersPage() {
   );
 
   const openCreate = () => {
+    if (editing) {
+      setForm(emptyForm);
+    }
     setEditing(null);
-    setForm(emptyForm);
     setError('');
     setOpen(true);
   };
 
   const openEdit = (managedUser: AdminManagedUser) => {
+    if (editing?.id !== managedUser.id) {
+      setForm({
+        email: managedUser.email,
+        fullName: managedUser.fullName,
+        password: '',
+        roles: managedUser.roles
+      });
+    }
     setEditing(managedUser);
-    setForm({
-      email: managedUser.email,
-      fullName: managedUser.fullName,
-      password: '',
-      roles: managedUser.roles
-    });
     setError('');
     setOpen(true);
+  };
+
+  const closeFormModal = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+  };
+
+  const cancelFormModal = () => {
+    setEditing(null);
+    setForm(emptyForm);
+    setError('');
+    setOpen(false);
   };
 
   const toggleRole = (role: Role) => {
@@ -159,47 +174,49 @@ export default function AdminUsersPage() {
             ) : sortedUsers.length === 0 ? (
               <p className="text-sm text-muted">{t('admin.users.empty')}</p>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t('admin.users.fullName')}</TableHead>
-                    <TableHead>{t('admin.users.email')}</TableHead>
-                    <TableHead>{t('admin.users.roles')}</TableHead>
-                    <TableHead>{t('admin.users.createdAt')}</TableHead>
-                    <TableHead></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sortedUsers.map(managedUser => {
-                    const isCurrentUser = managedUser.id === currentUser?.id;
-                    return (
-                      <TableRow key={managedUser.id}>
-                        <TableCell>{managedUser.fullName}</TableCell>
-                        <TableCell>{managedUser.email}</TableCell>
-                        <TableCell>{managedUser.roles.map(role => toDisplayRole(role)).join(', ')}</TableCell>
-                        <TableCell>{new Date(managedUser.createdAt).toLocaleString()}</TableCell>
-                        <TableCell className="text-right">
-                          <button className="mr-3 text-sm underline" onClick={() => openEdit(managedUser)}>
-                            {t('common.edit')}
-                          </button>
-                          <button
-                            className="text-sm text-red-600 underline disabled:text-muted"
-                            onClick={() => remove(managedUser.id)}
-                            disabled={isCurrentUser}
-                            title={isCurrentUser ? t('admin.users.cannotDeleteSelf') : ''}
-                          >
-                            {t('common.delete')}
-                          </button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+              <div className="max-h-[58vh] overflow-auto">
+                <Table>
+                  <TableHeader className="sticky top-0 z-20 bg-white">
+                    <TableRow>
+                      <TableHead className="bg-white">{t('admin.users.fullName')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.users.email')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.users.roles')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.users.createdAt')}</TableHead>
+                      <TableHead className="bg-white"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {sortedUsers.map(managedUser => {
+                      const isCurrentUser = managedUser.id === currentUser?.id;
+                      return (
+                        <TableRow key={managedUser.id}>
+                          <TableCell>{managedUser.fullName}</TableCell>
+                          <TableCell>{managedUser.email}</TableCell>
+                          <TableCell>{managedUser.roles.map(role => toDisplayRole(role)).join(', ')}</TableCell>
+                          <TableCell>{new Date(managedUser.createdAt).toLocaleString()}</TableCell>
+                          <TableCell className="text-right">
+                            <button className="mr-3 text-sm underline" onClick={() => openEdit(managedUser)}>
+                              {t('common.edit')}
+                            </button>
+                            <button
+                              className="text-sm text-red-600 underline disabled:text-muted"
+                              onClick={() => remove(managedUser.id)}
+                              disabled={isCurrentUser}
+                              title={isCurrentUser ? t('admin.users.cannotDeleteSelf') : ''}
+                            >
+                              {t('common.delete')}
+                            </button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
             )}
           </Card>
 
-          <Dialog open={open} onOpenChange={setOpen}>
+          <Dialog open={open} onOpenChange={closeFormModal}>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>{editing ? t('admin.users.edit') : t('admin.users.create')}</DialogTitle>
@@ -246,7 +263,15 @@ export default function AdminUsersPage() {
                     ))}
                   </div>
                 </FormField>
-                <Button className="w-full">{t('common.save')}</Button>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <Button type="button" variant="ghost" onClick={() => closeFormModal(false)}>
+                    {t('common.close')}
+                  </Button>
+                  <Button type="button" variant="outline" onClick={cancelFormModal}>
+                    {t('common.cancel')}
+                  </Button>
+                  <Button>{t('common.save')}</Button>
+                </div>
               </form>
             </DialogContent>
           </Dialog>

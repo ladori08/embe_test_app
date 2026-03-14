@@ -18,9 +18,46 @@ export default function ShopPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [stockWarning, setStockWarning] = useState('');
   const [cartOpen, setCartOpen] = useState(false);
-  const { addItem, items } = useCart();
+  const [selectedQty, setSelectedQty] = useState<Record<string, number>>({});
+  const { addItem, itemCount, items, stockByProductId } = useCart();
   const { t, moneyCompact } = useI18n();
+
+  const getInCartQty = (productId: string) => {
+    const item = items.find(cartItem => cartItem.productId === productId);
+    return item ? item.qty : 0;
+  };
+
+  const getRemainingStock = (product: Product) => {
+    const syncedStock = stockByProductId[product.id];
+    const sourceStock = Number.isFinite(syncedStock) ? syncedStock : Number(product.currentStock);
+    const currentStock = Number.isFinite(sourceStock) ? Math.max(0, Math.floor(sourceStock)) : 0;
+    return Math.max(0, currentStock - getInCartQty(product.id));
+  };
+
+  const getSelectedQty = (productId: string, maxQty: number) => {
+    if (maxQty <= 0) {
+      return 0;
+    }
+    const raw = selectedQty[productId];
+    if (!Number.isFinite(raw) || raw == null) {
+      return 1;
+    }
+    return Math.max(1, Math.min(Math.floor(raw), maxQty));
+  };
+
+  const setQty = (productId: string, qty: number, maxQty: number) => {
+    if (maxQty <= 0) {
+      setSelectedQty(prev => ({ ...prev, [productId]: 0 }));
+      return;
+    }
+    const clamped = Math.max(1, Math.min(Math.floor(qty), maxQty));
+    setSelectedQty(prev => ({
+      ...prev,
+      [productId]: clamped
+    }));
+  };
 
   useEffect(() => {
     api
@@ -42,7 +79,7 @@ export default function ShopPage() {
           <p className="mt-3 max-w-xl text-muted">{t('shop.heroDesc')}</p>
           <div className="mt-6 flex gap-3">
             <Button onClick={() => setCartOpen(true)}>
-              <ShoppingBag className="mr-2 h-4 w-4" /> {t('shop.cartCta', { count: items.length })}
+              <ShoppingBag className="mr-2 h-4 w-4" /> {t('shop.cartCta', { count: itemCount })}
             </Button>
             <Link href="/shop/checkout">
               <Button variant="outline">{t('shop.quickCheckout')}</Button>
@@ -58,33 +95,91 @@ export default function ShopPage() {
 
           {loading && <p className="rounded-xl bg-white p-4 text-sm text-muted">{t('shop.loading')}</p>}
           {error && <p className="rounded-xl bg-white p-4 text-sm text-red-600">{error}</p>}
+          {stockWarning && <p className="rounded-xl bg-white p-4 text-sm text-red-600">{stockWarning}</p>}
           {!loading && !error && products.length === 0 && (
             <p className="rounded-xl bg-white p-4 text-sm text-muted">{t('shop.empty')}</p>
           )}
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {products.map(product => (
-              <Card key={product.id} className="reveal">
-                <CardTitle>{product.name}</CardTitle>
-                <CardDescription>{product.category}</CardDescription>
-                <CardContent className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-lg font-semibold">{moneyCompact(product.price)}</span>
-                    <Badge>{t('shop.stock', { stock: product.currentStock })}</Badge>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button onClick={() => addItem(product)} className="flex-1">
-                      {t('shop.addToCart')}
-                    </Button>
-                    <Link className="flex-1" href={`/shop/product/${product.id}`}>
-                      <Button variant="outline" className="w-full">
-                        {t('shop.details')}
+            {products.map(product => {
+              const remainingStock = getRemainingStock(product);
+              const pickedQty = getSelectedQty(product.id, remainingStock);
+
+              return (
+                <Card key={product.id} className="reveal">
+                  <CardTitle>{product.name}</CardTitle>
+                  <CardDescription>{product.category}</CardDescription>
+                  <CardContent className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-lg font-semibold">{moneyCompact(product.price)}</span>
+                      <Badge>{t('shop.stock', { stock: remainingStock })}</Badge>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted">{t('shop.quantity')}</span>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-9 w-9 px-0"
+                          onClick={() => setQty(product.id, pickedQty - 1, remainingStock)}
+                          disabled={remainingStock <= 0 || pickedQty <= 1}
+                        >
+                          -
+                        </Button>
+                        <span className="w-10 text-center tabular-nums">{pickedQty}</span>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-9 w-9 px-0"
+                          onClick={() => setQty(product.id, pickedQty + 1, remainingStock)}
+                          disabled={remainingStock <= 0 || pickedQty >= remainingStock}
+                        >
+                          +
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={() => {
+                          const result = addItem(product, pickedQty);
+                          if (!result.ok) {
+                            setStockWarning(t('shop.insufficientStock', { name: product.name, available: result.available }));
+                            return;
+                          }
+                          setStockWarning('');
+                          setSelectedQty(prev => ({ ...prev, [product.id]: result.available > 0 ? 1 : 0 }));
+                        }}
+                        className="flex-1"
+                        disabled={remainingStock <= 0 || pickedQty <= 0}
+                      >
+                        {t('shop.addToCart')}
                       </Button>
-                    </Link>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="px-3"
+                        onClick={() => {
+                          const result = addItem(product, 1);
+                          if (!result.ok) {
+                            setStockWarning(t('shop.insufficientStock', { name: product.name, available: result.available }));
+                            return;
+                          }
+                          setStockWarning('');
+                        }}
+                        disabled={remainingStock <= 0}
+                      >
+                        {t('shop.quickAddOne')}
+                      </Button>
+                      <Link className="flex-1" href={`/shop/product/${product.id}`}>
+                        <Button variant="outline" className="w-full">
+                          {t('shop.details')}
+                        </Button>
+                      </Link>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         </section>
       </main>

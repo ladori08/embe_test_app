@@ -28,6 +28,11 @@ public class ProductAdminController {
         return productService.getById(id);
     }
 
+    @GetMapping("/{id}/lots")
+    public List<ProductLotResponse> lots(@PathVariable String id) {
+        return productService.listLots(id);
+    }
+
     @GetMapping("/next-sku")
     public SkuSuggestionResponse nextSku(@RequestParam String category) {
         return new SkuSuggestionResponse(productService.previewNextSku(category));

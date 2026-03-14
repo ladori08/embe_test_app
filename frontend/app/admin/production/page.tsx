@@ -83,15 +83,26 @@ export default function AdminProductionPage() {
       setError(t('admin.production.noRecipes'));
       return;
     }
-    setOverrideLines(
-      selectedRecipe.items.map(item => ({
-        ingredientId: item.ingredientId,
-        ingredientName: item.ingredientName || item.ingredientId,
-        unit: item.unit,
-        qtyPerBatch: Number(item.qtyPerBatch)
-      }))
+    setOverrideLines(prev =>
+      prev.length > 0
+        ? prev
+        : selectedRecipe.items.map(item => ({
+            ingredientId: item.ingredientId,
+            ingredientName: item.ingredientName || item.ingredientId,
+            unit: item.unit,
+            qtyPerBatch: Number(item.qtyPerBatch)
+          }))
     );
     setOverrideOpen(true);
+  };
+
+  const closeOverrideModal = (nextOpen: boolean) => {
+    setOverrideOpen(nextOpen);
+  };
+
+  const cancelOverrideModal = () => {
+    setOverrideLines([]);
+    setOverrideOpen(false);
   };
 
   const confirmOverride = () => {
@@ -173,36 +184,38 @@ export default function AdminProductionPage() {
             {bakes.length === 0 ? (
               <p className="text-sm text-muted">{t('admin.production.empty')}</p>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t('admin.production.id')}</TableHead>
-                    <TableHead>{t('admin.production.recipe')}</TableHead>
-                    <TableHead>{t('admin.production.version')}</TableHead>
-                    <TableHead>{t('admin.production.customized')}</TableHead>
-                    <TableHead>{t('admin.production.factor')}</TableHead>
-                    <TableHead>{t('admin.production.produced')}</TableHead>
-                    <TableHead>{t('admin.production.at')}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {bakes.map(bake => (
-                    <TableRow key={bake.id}>
-                      <TableCell>{bake.id.slice(0, 8)}...</TableCell>
-                      <TableCell>{bake.recipeId}</TableCell>
-                      <TableCell>v{bake.recipeVersion ?? 1}</TableCell>
-                      <TableCell>{bake.customOverride ? t('common.yes') : t('common.no')}</TableCell>
-                      <TableCell>{bake.factor}</TableCell>
-                      <TableCell>{bake.producedQty}</TableCell>
-                      <TableCell>{new Date(bake.createdAt).toLocaleString()}</TableCell>
+              <div className="max-h-[58vh] overflow-auto">
+                <Table>
+                  <TableHeader className="sticky top-0 z-20 bg-white">
+                    <TableRow>
+                      <TableHead className="bg-white">{t('admin.production.id')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.production.recipe')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.production.version')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.production.customized')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.production.factor')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.production.produced')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.production.at')}</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {bakes.map(bake => (
+                      <TableRow key={bake.id}>
+                        <TableCell>{bake.id.slice(0, 8)}...</TableCell>
+                        <TableCell>{bake.recipeId}</TableCell>
+                        <TableCell>v{bake.recipeVersion ?? 1}</TableCell>
+                        <TableCell>{bake.customOverride ? t('common.yes') : t('common.no')}</TableCell>
+                        <TableCell>{bake.factor}</TableCell>
+                        <TableCell>{bake.producedQty}</TableCell>
+                        <TableCell>{new Date(bake.createdAt).toLocaleString()}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             )}
           </Card>
 
-          <Dialog open={overrideOpen} onOpenChange={setOverrideOpen}>
+          <Dialog open={overrideOpen} onOpenChange={closeOverrideModal}>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>{t('admin.production.customizeTitle')}</DialogTitle>
@@ -224,8 +237,11 @@ export default function AdminProductionPage() {
                   </div>
                 ))}
               </div>
-              <div className="mt-4 flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setOverrideOpen(false)}>
+              <div className="mt-4 flex flex-wrap justify-end gap-2">
+                <Button variant="ghost" onClick={() => closeOverrideModal(false)}>
+                  {t('common.close')}
+                </Button>
+                <Button variant="outline" onClick={cancelOverrideModal}>
                   {t('common.cancel')}
                 </Button>
                 <Button onClick={confirmOverride}>{t('common.confirm')}</Button>

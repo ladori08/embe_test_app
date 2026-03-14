@@ -10,7 +10,9 @@ import com.embe.backend.ingredient.IngredientService;
 import com.embe.backend.ingredient.StockLotAllocation;
 import com.embe.backend.ingredient.StockTransactionType;
 import com.embe.backend.product.Product;
+import com.embe.backend.product.ProductStockEventBroadcaster;
 import com.embe.backend.product.ProductStockLogType;
+import com.embe.backend.product.ProductLotService;
 import com.embe.backend.product.ProductService;
 import com.embe.backend.recipe.Recipe;
 import com.embe.backend.recipe.RecipeItem;
@@ -20,6 +22,8 @@ import com.mongodb.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -36,6 +40,8 @@ public class BakeService {
     private final InventoryMutationService inventoryMutationService;
     private final IngredientService ingredientService;
     private final ProductService productService;
+    private final ProductLotService productLotService;
+    private final ProductStockEventBroadcaster productStockEventBroadcaster;
     private final AuthService authService;
     private final AuditLogService auditLogService;
 
@@ -45,6 +51,8 @@ public class BakeService {
             InventoryMutationService inventoryMutationService,
             IngredientService ingredientService,
             ProductService productService,
+            ProductLotService productLotService,
+            ProductStockEventBroadcaster productStockEventBroadcaster,
             AuthService authService,
             AuditLogService auditLogService
     ) {
@@ -53,6 +61,8 @@ public class BakeService {
         this.inventoryMutationService = inventoryMutationService;
         this.ingredientService = ingredientService;
         this.productService = productService;
+        this.productLotService = productLotService;
+        this.productStockEventBroadcaster = productStockEventBroadcaster;
         this.authService = authService;
         this.auditLogService = auditLogService;
     }
@@ -85,9 +95,7 @@ public class BakeService {
                 : BigDecimal.ZERO;
 
         inventoryMutationService.addProduct(recipe.getProductId(), producedQty);
-        if (totalIngredientCost.compareTo(BigDecimal.ZERO) > 0) {
-            productService.updateCost(recipe.getProductId(), producedUnitCost);
-        }
+        publishProductStockAfterCommit(recipe.getProductId());
         productService.saveStockLog(recipe.getProductId(), ProductStockLogType.IN, producedQty, "Production bake", null, currentUser());
 
         BakeRecord record = new BakeRecord();
@@ -112,6 +120,19 @@ public class BakeService {
             return bakeRepository.findByIdempotencyKey(request.idempotencyKey())
                     .map(this::toResponse)
                     .orElseThrow(() -> ex);
+        }
+
+        productLotService.createLotForProduction(
+                recipe.getProductId(),
+                producedQty,
+                producedUnitCost,
+                saved.getId(),
+                normalizeRecipeVersion(recipe.getVersion()),
+                customOverride ? "Bake with custom override" : "Bake production",
+                saved.getCreatedAt()
+        );
+        if (totalIngredientCost.compareTo(BigDecimal.ZERO) > 0) {
+            productService.applyProductionCost(recipe.getProductId(), producedQty, producedUnitCost);
         }
 
         Product product = productService.getEntity(recipe.getProductId());
@@ -266,5 +287,20 @@ public class BakeService {
         } catch (Exception ignored) {
             return "system";
         }
+    }
+
+    private void publishProductStockAfterCommit(String productId) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            Product product = productService.getEntity(productId);
+            productStockEventBroadcaster.publish(productId, product.getCurrentStock() == null ? BigDecimal.ZERO : product.getCurrentStock());
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                Product product = productService.getEntity(productId);
+                productStockEventBroadcaster.publish(productId, product.getCurrentStock() == null ? BigDecimal.ZERO : product.getCurrentStock());
+            }
+        });
     }
 }

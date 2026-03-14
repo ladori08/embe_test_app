@@ -26,27 +26,10 @@ type IngredientImportPayload = {
   reorderLevel: number;
 };
 
-type IngredientImportRowStatus = 'ready' | 'error' | 'success' | 'failed';
-
-type IngredientImportRow = {
-  lineNo: number;
-  ingredientCode: string;
-  name: string;
-  unit: string;
-  currentStock: number | null;
-  totalCost: number | null;
-  reorderLevel: number | null;
-  status: IngredientImportRowStatus;
-  statusText: string;
-  note: string;
-  payload: IngredientImportPayload | null;
-};
-
 type IngredientImportAnalysis = {
-  rows: IngredientImportRow[];
+  rows: IngredientImportPayload[];
+  errors: string[];
   totalRows: number;
-  validRows: number;
-  invalidRows: number;
 };
 
 const emptyForm = { name: '', unit: 'g', currentStock: 0, reorderLevel: 0, costTrackingMethod: 'AVG_BIN' };
@@ -85,17 +68,17 @@ const formatQty = (value: number) => {
   return Number(value.toFixed(4)).toLocaleString('vi-VN');
 };
 
+const formatCost = (value: number) => {
+  if (!Number.isFinite(value)) {
+    return '0';
+  }
+  return Number(value.toFixed(2)).toLocaleString('vi-VN');
+};
+
 const normalizeIngredientCode = (value: string) => {
   const normalized = value.trim().toUpperCase();
   if (!normalized || normalized === '-' || /^0([.,]0+)?$/.test(normalized)) {
     return '';
-  }
-  return normalized;
-};
-const normalizeImportUnit = (value: string) => {
-  const normalized = value.trim().toLowerCase();
-  if (normalized === 'psc') {
-    return 'pcs';
   }
   return normalized;
 };
@@ -105,11 +88,12 @@ export default function AdminIngredientsPage() {
   const [items, setItems] = useState<Ingredient[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [bulkImportMessage, setBulkImportMessage] = useState('');
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Ingredient | null>(null);
   const [form, setForm] = useState<any>(emptyForm);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailTarget, setDetailTarget] = useState<Ingredient | null>(null);
 
   const [restockOpen, setRestockOpen] = useState(false);
   const [restockTarget, setRestockTarget] = useState<Ingredient | null>(null);
@@ -132,6 +116,10 @@ export default function AdminIngredientsPage() {
   const [txQuery, setTxQuery] = useState('');
   const [txFrom, setTxFrom] = useState('');
   const [txTo, setTxTo] = useState('');
+  const [expandedLots, setExpandedLots] = useState<Record<string, boolean>>({});
+  const [lotsByIngredient, setLotsByIngredient] = useState<Record<string, IngredientTransaction[]>>({});
+  const [lotLoading, setLotLoading] = useState<Record<string, boolean>>({});
+  const [lotError, setLotError] = useState<Record<string, string>>({});
 
   const [unitDisplayMode, setUnitDisplayMode] = useState<UnitDisplayMode>('small');
 
@@ -145,9 +133,6 @@ export default function AdminIngredientsPage() {
       return [];
     }
   }, [importText]);
-  const hasImportPreview = importPreview != null && importPreview.rows.length > 0;
-  const hasImportErrors = importPreview != null && importPreview.invalidRows > 0;
-  const canRunImport = hasImportPreview && !hasImportErrors && !importing;
 
   const loadIngredients = async () => {
     setLoading(true);
@@ -203,25 +188,66 @@ export default function AdminIngredientsPage() {
   }, []);
 
   const openCreate = () => {
+    if (editing) {
+      setForm(emptyForm);
+    }
     setEditing(null);
-    setForm(emptyForm);
     setOpen(true);
+  };
+
+  const openDetail = (item: Ingredient) => {
+    setDetailTarget(item);
+    setDetailOpen(true);
+  };
+
+  const closeDetailModal = (nextOpen: boolean) => {
+    setDetailOpen(nextOpen);
+    if (!nextOpen) {
+      setDetailTarget(null);
+    }
   };
 
   const openEdit = (item: Ingredient) => {
+    if (editing?.id !== item.id) {
+      setForm(item);
+    }
     setEditing(item);
-    setForm(item);
     setOpen(true);
   };
 
+  const closeIngredientModal = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+  };
+
+  const cancelIngredientModal = () => {
+    setEditing(null);
+    setForm(emptyForm);
+    setOpen(false);
+  };
+
   const openRestock = (item: Ingredient) => {
-    setRestockTarget(item);
+    if (restockTarget?.id !== item.id) {
+      setRestockTarget(item);
+      setRestockQty('0');
+      const options = getInputUnitOptions(item.unit);
+      setRestockUnit((options[0] || 'g') as 'g' | 'kg' | 'ml' | 'l' | 'pcs');
+      setRestockTotalCost('');
+      setRestockNote('');
+    }
+    setRestockOpen(true);
+  };
+
+  const closeRestockModal = (nextOpen: boolean) => {
+    setRestockOpen(nextOpen);
+  };
+
+  const cancelRestockModal = () => {
+    setRestockTarget(null);
     setRestockQty('0');
-    const options = getInputUnitOptions(item.unit);
-    setRestockUnit((options[0] || 'g') as 'g' | 'kg' | 'ml' | 'l' | 'pcs');
+    setRestockUnit('g');
     setRestockTotalCost('');
     setRestockNote('');
-    setRestockOpen(true);
+    setRestockOpen(false);
   };
 
   const submit = async (e: FormEvent) => {
@@ -274,28 +300,24 @@ export default function AdminIngredientsPage() {
     await loadAll();
   };
 
-  const clearBulkImportState = () => {
+  const openBulkImportModal = () => {
+    setImportOpen(true);
+  };
+
+  const closeImportModal = (nextOpen: boolean) => {
+    setImportOpen(nextOpen);
+  };
+
+  const resetBulkImportDraft = () => {
     setImportText('');
     setImportResult('');
     setImportPreview(null);
     setImportWorkbookName('');
   };
 
-  const closeBulkImportModal = () => {
+  const cancelImportModal = () => {
+    resetBulkImportDraft();
     setImportOpen(false);
-    clearBulkImportState();
-  };
-
-  const handleBulkImportOpenChange = (nextOpen: boolean) => {
-    setImportOpen(nextOpen);
-    if (!nextOpen) {
-      clearBulkImportState();
-    }
-  };
-
-  const openBulkImportModal = () => {
-    clearBulkImportState();
-    setImportOpen(true);
   };
 
   const applyTransactionFilter = async (e: FormEvent) => {
@@ -311,6 +333,38 @@ export default function AdminIngredientsPage() {
     await loadTransactions({ type: '', query: '', from: '', to: '' });
   };
 
+  const loadLotsForIngredient = async (ingredientId: string) => {
+    setLotLoading(prev => ({ ...prev, [ingredientId]: true }));
+    setLotError(prev => ({ ...prev, [ingredientId]: '' }));
+    try {
+      const rows = await api.listIngredientTransactions({
+        ingredientId,
+        type: 'IN',
+        limit: 500
+      });
+      const normalized = rows
+        .slice()
+        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      setLotsByIngredient(prev => ({ ...prev, [ingredientId]: normalized }));
+    } catch (err) {
+      setLotError(prev => ({
+        ...prev,
+        [ingredientId]: err instanceof Error ? err.message : t('admin.ingredients.txLoadFailed')
+      }));
+      setLotsByIngredient(prev => ({ ...prev, [ingredientId]: [] }));
+    } finally {
+      setLotLoading(prev => ({ ...prev, [ingredientId]: false }));
+    }
+  };
+
+  const toggleLots = (ingredientId: string) => {
+    const nextOpen = !expandedLots[ingredientId];
+    setExpandedLots(prev => ({ ...prev, [ingredientId]: nextOpen }));
+    if (nextOpen) {
+      void loadLotsForIngredient(ingredientId);
+    }
+  };
+
   const downloadTemplate = async () => {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
@@ -321,14 +375,12 @@ export default function AdminIngredientsPage() {
 
     ingredientsSheet.columns = [
       { header: 'ingredientCode', key: 'ingredientCode', width: 18 },
-      { header: 'name', key: 'name', width: 32 },
-      { header: 'unit', key: 'unit', width: 12 }
+      { header: 'name', key: 'name', width: 32 }
     ];
     ingredients.forEach(ingredient => {
       ingredientsSheet.addRow({
         ingredientCode: ingredient.ingredientCode || '',
-        name: ingredient.name,
-        unit: ingredient.unit || ''
+        name: ingredient.name
       });
     });
     ingredientsSheet.views = [{ state: 'frozen', ySplit: 1 }];
@@ -365,17 +417,13 @@ export default function AdminIngredientsPage() {
         };
         nameCell.protection = { locked: false };
       }
-      const unitCell = importSheet.getCell(`C${rowNumber}`);
-      unitCell.value = {
-        formula: `IF(B${rowNumber}="","",IFERROR(XLOOKUP(B${rowNumber},Ingredients!$B:$B,Ingredients!$C:$C,""),IFERROR(INDEX(Ingredients!$C:$C,MATCH(B${rowNumber},Ingredients!$B:$B,0)),"")))`,
-        result: ''
-      };
-      unitCell.protection = { locked: false };
+      importSheet.getCell(`C${rowNumber}`).protection = { locked: false };
       importSheet.getCell(`D${rowNumber}`).protection = { locked: false };
       importSheet.getCell(`E${rowNumber}`).protection = { locked: false };
       importSheet.getCell(`F${rowNumber}`).protection = { locked: false };
     }
 
+    importSheet.getCell('C2').value = 'g';
     importSheet.getCell('D2').value = 0;
     importSheet.getCell('E2').value = 0;
     importSheet.getCell('F2').value = 0;
@@ -449,16 +497,9 @@ export default function AdminIngredientsPage() {
     const stockIndex = hasHeader ? detectedStock : 2;
     const totalCostIndex = hasHeader ? detectedTotalCost : 3;
     const reorderIndex = hasHeader ? detectedReorder : 4;
-    const existingByCode = new Map<string, Ingredient>();
-    const existingByNameUnit = new Map<string, Ingredient>();
-    for (const ingredient of items) {
-      if (ingredient.ingredientCode && ingredient.ingredientCode.trim()) {
-        existingByCode.set(normalizeIngredientCode(ingredient.ingredientCode), ingredient);
-      }
-      existingByNameUnit.set(normalizeIngredientKey(ingredient.name, ingredient.unit), ingredient);
-    }
 
-    const previewRows: IngredientImportRow[] = [];
+    const parsedRows: IngredientImportPayload[] = [];
+    const errors: string[] = [];
     let totalRows = 0;
 
     for (let i = 0; i < dataRows.length; i++) {
@@ -473,138 +514,55 @@ export default function AdminIngredientsPage() {
       const ingredientCode = codeRaw.startsWith('=') ? '' : normalizeIngredientCode(codeRaw);
       const name = nameIndex >= 0 ? (row[nameIndex] || '').trim() : '';
       const unitRaw = unitIndex >= 0 ? (row[unitIndex] || '').trim().toLowerCase() : '';
-      const normalizedUnit = normalizeImportUnit(unitRaw);
       const stockRaw = stockIndex >= 0 ? (row[stockIndex] || '').trim() : '';
       const totalCostRaw = totalCostIndex >= 0 ? (row[totalCostIndex] || '').trim() : '';
       const reorderRaw = reorderIndex >= 0 ? (row[reorderIndex] || '').trim() : '';
-      const currentStock = stockRaw ? parseFlexibleNumber(stockRaw) : null;
-      const parsedCost = totalCostRaw ? parseFlexibleNumber(totalCostRaw) : null;
-      const reorderLevel = reorderRaw ? parseFlexibleNumber(reorderRaw) : 0;
-      const makeRow = (
-        status: IngredientImportRowStatus,
-        note: string,
-        payload: IngredientImportPayload | null,
-        statusText = note
-      ): IngredientImportRow => ({
-        lineNo,
-        ingredientCode,
-        name,
-        unit: normalizedUnit,
-        currentStock,
-        totalCost: parsedCost,
-        reorderLevel,
-        status,
-        statusText,
-        note,
-        payload
-      });
 
       if (!name || !unitRaw || !stockRaw) {
-        previewRows.push(
-          makeRow(
-            'error',
-            t('admin.ingredients.bulkImportRowMissingRequired', {
-              lineNo
-            }),
-            null
-          )
-        );
+        errors.push(`Line ${lineNo}: missing required data`);
         continue;
       }
 
-      if (!['g', 'ml', 'pcs'].includes(normalizedUnit)) {
-        previewRows.push(
-          makeRow(
-            'error',
-            t('admin.ingredients.bulkImportRowInvalidUnit', {
-              lineNo,
-              unit: unitRaw || '-'
-            }),
-            null
-          )
-        );
+      if (!['g', 'ml', 'pcs'].includes(unitRaw)) {
+        errors.push(`Line ${lineNo}: invalid unit "${unitRaw}"`);
         continue;
       }
       if (ingredientCode && !/^[A-Z0-9-]{3,20}$/.test(ingredientCode)) {
-        previewRows.push(
-          makeRow(
-            'error',
-            t('admin.ingredients.bulkImportRowInvalidCode', {
-              lineNo,
-              code: ingredientCode
-            }),
-            null
-          )
-        );
+        errors.push(`Line ${lineNo}: invalid ingredientCode "${ingredientCode}"`);
         continue;
       }
 
-      if (
-        currentStock == null ||
-        !Number.isFinite(currentStock) ||
-        currentStock < 0 ||
-        reorderLevel == null ||
-        !Number.isFinite(reorderLevel) ||
-        reorderLevel < 0
-      ) {
-        previewRows.push(
-          makeRow(
-            'error',
-            t('admin.ingredients.bulkImportRowInvalidNumeric', {
-              lineNo
-            }),
-            null
-          )
-        );
+      const currentStock = parseFlexibleNumber(stockRaw);
+      const parsedCost = totalCostRaw ? parseFlexibleNumber(totalCostRaw) : NaN;
+      const reorderLevel = reorderRaw ? parseFlexibleNumber(reorderRaw) : 0;
+      if (!Number.isFinite(currentStock) || currentStock < 0 || !Number.isFinite(reorderLevel) || reorderLevel < 0) {
+        errors.push(`Line ${lineNo}: invalid numeric value`);
         continue;
       }
       const totalCost = currentStock > 0 ? parsedCost : null;
       if (currentStock > 0 && (totalCost == null || !Number.isFinite(totalCost) || totalCost <= 0)) {
-        previewRows.push(
-          makeRow(
-            'error',
-            t('admin.ingredients.bulkImportRowTotalCostRequired', {
-              lineNo
-            }),
-            null
-          )
-        );
+        errors.push(`Line ${lineNo}: totalCost is required when currentStock > 0`);
         continue;
       }
 
-      const payload: IngredientImportPayload = {
+      parsedRows.push({
         name,
         ingredientCode,
-        unit: normalizedUnit as 'g' | 'ml' | 'pcs',
+        unit: unitRaw as 'g' | 'ml' | 'pcs',
         currentStock,
         reorderLevel,
         totalCost
-      };
-      let exists = false;
-      if (ingredientCode) {
-        exists = existingByCode.has(ingredientCode);
-      }
-      if (!exists) {
-        exists = existingByNameUnit.has(normalizeIngredientKey(name, normalizedUnit));
-      }
-      const actionStatus = exists
-        ? t('admin.ingredients.bulkImportStatusStockExisting')
-        : t('admin.ingredients.bulkImportStatusCreateNew');
-      previewRows.push(makeRow('ready', t('admin.ingredients.bulkImportRowReady'), payload, actionStatus));
+      });
     }
 
     if (totalRows === 0) {
       throw new Error(t('admin.ingredients.bulkImportEmpty'));
     }
 
-    const validRows = previewRows.filter(row => row.status === 'ready').length;
-    const invalidRows = previewRows.filter(row => row.status === 'error').length;
-
     return {
-      rows: previewRows,
-      totalRows,
-      validRows,
-      invalidRows
+      rows: parsedRows,
+      errors,
+      totalRows
     };
   };
 
@@ -612,12 +570,13 @@ export default function AdminIngredientsPage() {
     try {
       const analysis = analyzeIngredientImport();
       setImportPreview(analysis);
+      const previewErrors = analysis.errors.slice(0, 5).join(' | ');
       setImportResult(
         `${t('admin.ingredients.bulkImportPreview', {
           total: analysis.totalRows,
-          valid: analysis.validRows,
-          invalid: analysis.invalidRows
-        })}`
+          valid: analysis.rows.length,
+          invalid: analysis.errors.length
+        })}${previewErrors ? ` (${previewErrors})` : ''}`
       );
     } catch (err) {
       setImportResult(err instanceof Error ? err.message : t('admin.ingredients.bulkImportFailed'));
@@ -625,30 +584,11 @@ export default function AdminIngredientsPage() {
   };
 
   const importBulk = async () => {
-    setBulkImportMessage('');
-    let analysis: IngredientImportAnalysis;
-    try {
-      analysis = importPreview ?? analyzeIngredientImport();
-    } catch (err) {
-      setImportResult(err instanceof Error ? err.message : t('admin.ingredients.bulkImportFailed'));
-      return;
-    }
-
-    if (analysis.invalidRows > 0) {
-      setImportPreview(analysis);
-      setImportResult(
-        t('admin.ingredients.bulkImportBlockedByErrors', {
-          count: analysis.invalidRows
-        })
-      );
-      return;
-    }
-
     setImporting(true);
     try {
-      const previewRows = analysis.rows.map(row => ({ ...row }));
+      const analysis = importPreview ?? analyzeIngredientImport();
       let imported = 0;
-      let failed = 0;
+      const errors = [...analysis.errors];
       const existing = await api.listIngredients();
       const existingByCode = new Map<string, Ingredient>();
       const existingByNameUnit = new Map<string, Ingredient>();
@@ -660,35 +600,22 @@ export default function AdminIngredientsPage() {
         existingByNameUnit.set(normalizeIngredientKey(ingredient.name, ingredient.unit), ingredient);
       }
 
-      for (const row of previewRows) {
-        if (row.status !== 'ready' || !row.payload) {
-          continue;
-        }
-
-        const payload = row.payload;
+      for (const payload of analysis.rows) {
         try {
           const normalizedCode = normalizeIngredientCode(payload.ingredientCode || '');
           let target = normalizedCode ? existingByCode.get(normalizedCode) : undefined;
-          let created = false;
-          let stocked = false;
 
           if (!target) {
             target = existingByNameUnit.get(normalizeIngredientKey(payload.name, payload.unit));
           }
 
           if (target && target.unit !== payload.unit) {
-            row.status = 'failed';
-            row.note = t('admin.ingredients.bulkImportRowUnitMismatch', {
-              name: payload.name,
-              unit: target.unit
-            });
-            row.statusText = row.note;
-            failed++;
+            errors.push(`Ingredient "${payload.name}": unit mismatch with existing ingredient ${target.unit}`);
             continue;
           }
 
           if (!target) {
-            const createdIngredient = await api.createIngredient({
+            const created = await api.createIngredient({
               name: payload.name,
               ingredientCode: normalizedCode || undefined,
               unit: payload.unit,
@@ -696,12 +623,11 @@ export default function AdminIngredientsPage() {
               reorderLevel: payload.reorderLevel,
               costTrackingMethod: 'AVG_BIN'
             });
-            target = createdIngredient;
-            created = true;
-            if (createdIngredient.ingredientCode && createdIngredient.ingredientCode.trim()) {
-              existingByCode.set(normalizeIngredientCode(createdIngredient.ingredientCode), createdIngredient);
+            target = created;
+            if (created.ingredientCode && created.ingredientCode.trim()) {
+              existingByCode.set(normalizeIngredientCode(created.ingredientCode), created);
             }
-            existingByNameUnit.set(normalizeIngredientKey(createdIngredient.name, createdIngredient.unit), createdIngredient);
+            existingByNameUnit.set(normalizeIngredientKey(created.name, created.unit), created);
           }
 
           if (payload.currentStock > 0 && payload.totalCost != null) {
@@ -712,58 +638,19 @@ export default function AdminIngredientsPage() {
               totalCost: payload.totalCost,
               note: 'Bulk import initial stock'
             });
-            stocked = true;
           }
-
-          if (created && stocked) {
-            row.note = t('admin.ingredients.bulkImportRowSuccessCreateAndStock', {
-              qty: payload.currentStock,
-              unit: payload.unit,
-              totalCost: payload.totalCost ?? 0
-            });
-          } else if (created) {
-            row.note = t('admin.ingredients.bulkImportRowSuccessCreateOnly');
-          } else if (stocked) {
-            row.note = t('admin.ingredients.bulkImportRowSuccessStockOnly', {
-              qty: payload.currentStock,
-              unit: payload.unit,
-              totalCost: payload.totalCost ?? 0
-            });
-          } else {
-            row.note = t('admin.ingredients.bulkImportRowSuccessNoStock');
-          }
-          row.status = 'success';
           imported++;
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Failed';
-          row.status = 'failed';
-          row.note = t('admin.ingredients.bulkImportRowFailed', {
-            name: payload.name,
-            message
-          });
-          row.statusText = row.note;
-          failed++;
+          errors.push(`Ingredient "${payload.name}": ${message}`);
         }
       }
 
-      const validRows = previewRows.filter(row => row.status === 'success').length;
-      const invalidRows = previewRows.filter(row => row.status === 'failed' || row.status === 'error').length;
-      const importSummary = `${t('admin.ingredients.bulkImportResult')}: imported=${imported}, failed=${failed}`;
-      setImportPreview({
-        rows: previewRows,
-        totalRows: previewRows.length,
-        validRows,
-        invalidRows
-      });
-      setImportResult(importSummary);
-      if (failed === 0) {
-        closeBulkImportModal();
-        setBulkImportMessage(
-          t('admin.ingredients.bulkImportSuccessMessage', {
-            count: imported
-          })
-        );
-      }
+      const previewErrors = errors.slice(0, 5).join(' | ');
+      setImportResult(
+        `${t('admin.ingredients.bulkImportResult')}: imported=${imported}, skipped=${errors.length}${previewErrors ? ` (${previewErrors})` : ''}`
+      );
+      setImportPreview(null);
       await loadAll();
     } catch (err) {
       setImportResult(err instanceof Error ? err.message : t('admin.ingredients.bulkImportFailed'));
@@ -786,22 +673,6 @@ export default function AdminIngredientsPage() {
       .join(', ');
   };
 
-  const rawPreviewStatusByLine = (() => {
-    const map = new Map<number, string>();
-    if (!importText.trim()) {
-      return map;
-    }
-    try {
-      const analysis = analyzeIngredientImport();
-      analysis.rows.forEach(row => {
-        map.set(row.lineNo, row.statusText || row.note);
-      });
-    } catch {
-      return map;
-    }
-    return map;
-  })();
-
   return (
     <>
       <TopNav />
@@ -817,7 +688,6 @@ export default function AdminIngredientsPage() {
                 <Button onClick={openCreate}>{t('admin.ingredients.add')}</Button>
               </div>
             </div>
-            {bulkImportMessage ? <p className="mb-3 text-sm text-green-700">{bulkImportMessage}</p> : null}
             {loading ? (
               <p className="text-sm text-muted">{t('admin.ingredients.loading')}</p>
             ) : error ? (
@@ -825,46 +695,122 @@ export default function AdminIngredientsPage() {
             ) : items.length === 0 ? (
               <p className="text-sm text-muted">{t('admin.ingredients.empty')}</p>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t('admin.ingredients.name')}</TableHead>
-                    <TableHead>
-                      <div className="space-y-1">
-                        <p>{t('admin.ingredients.unit')}</p>
-                        <Select value={unitDisplayMode} onChange={e => setUnitDisplayMode(e.target.value as UnitDisplayMode)}>
-                          <option value="small">{t('admin.ingredients.unitSmall')}</option>
-                          <option value="large">{t('admin.ingredients.unitLarge')}</option>
-                        </Select>
-                      </div>
-                    </TableHead>
-                    <TableHead>{t('admin.ingredients.stock')}</TableHead>
-                    <TableHead>{t('admin.ingredients.reorder')}</TableHead>
-                    <TableHead></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {items.map(item => (
-                    <TableRow key={item.id}>
-                      <TableCell>{item.name}</TableCell>
-                      <TableCell>{convertUnit(item.unit, unitDisplayMode)}</TableCell>
-                      <TableCell>{formatQty(convertQty(Number(item.currentStock || 0), item.unit, unitDisplayMode))}</TableCell>
-                      <TableCell>{formatQty(convertQty(Number(item.reorderLevel || 0), item.unit, unitDisplayMode))}</TableCell>
-                      <TableCell className="text-right">
-                        <button className="mr-3 text-sm underline" onClick={() => openRestock(item)}>
-                          {t('admin.ingredients.restock')}
-                        </button>
-                        <button className="mr-3 text-sm underline" onClick={() => openEdit(item)}>
-                          {t('common.edit')}
-                        </button>
-                        <button className="text-sm text-red-600 underline" onClick={() => remove(item.id)}>
-                          {t('common.delete')}
-                        </button>
-                      </TableCell>
+              <div className="max-h-[58vh] overflow-auto">
+                <Table>
+                  <TableHeader className="sticky top-0 z-20 bg-white">
+                    <TableRow>
+                      <TableHead className="bg-white">{t('admin.ingredients.name')}</TableHead>
+                      <TableHead className="bg-white">
+                        <div className="space-y-1">
+                          <p>{t('admin.ingredients.unit')}</p>
+                          <Select value={unitDisplayMode} onChange={e => setUnitDisplayMode(e.target.value as UnitDisplayMode)}>
+                            <option value="small">{t('admin.ingredients.unitSmall')}</option>
+                            <option value="large">{t('admin.ingredients.unitLarge')}</option>
+                          </Select>
+                        </div>
+                      </TableHead>
+                      <TableHead className="bg-white">{t('admin.ingredients.stock')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.ingredients.reorder')}</TableHead>
+                      <TableHead className="bg-white"></TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {items.map(item => {
+                      const isExpanded = !!expandedLots[item.id];
+                      const lots = lotsByIngredient[item.id] || [];
+                      const isLotLoading = !!lotLoading[item.id];
+                      const lotLoadError = lotError[item.id] || '';
+                      return [
+                        <TableRow key={item.id} className="cursor-pointer hover:bg-[#f8f1e8]/60" onClick={() => openDetail(item)}>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  className="rounded-md border border-border bg-white px-2 py-0.5 text-xs text-muted hover:bg-[#f5ede3] hover:text-ink"
+                                  onClick={event => {
+                                    event.stopPropagation();
+                                    toggleLots(item.id);
+                                  }}
+                                >
+                                  {isExpanded ? '▾' : '▸'}
+                                </button>
+                                <span>{item.name}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell>{convertUnit(item.unit, unitDisplayMode)}</TableCell>
+                            <TableCell>{formatQty(convertQty(Number(item.currentStock || 0), item.unit, unitDisplayMode))}</TableCell>
+                            <TableCell>{formatQty(convertQty(Number(item.reorderLevel || 0), item.unit, unitDisplayMode))}</TableCell>
+                            <TableCell className="text-right" onClick={event => event.stopPropagation()}>
+                              <button className="mr-3 text-sm underline" onClick={() => openRestock(item)}>
+                                {t('admin.ingredients.restock')}
+                              </button>
+                              <button className="mr-3 text-sm underline" onClick={() => openEdit(item)}>
+                                {t('common.edit')}
+                              </button>
+                              <button className="text-sm text-red-600 underline" onClick={() => remove(item.id)}>
+                                {t('common.delete')}
+                              </button>
+                            </TableCell>
+                        </TableRow>,
+                        isExpanded ? (
+                            <TableRow key={`${item.id}-lots`} className="bg-[#fbf7f0]">
+                              <TableCell colSpan={5}>
+                                <div className="space-y-2">
+                                  <p className="text-sm font-semibold text-muted">{t('admin.ingredients.lotsTitle')}</p>
+                                  {isLotLoading ? (
+                                    <p className="text-sm text-muted">{t('admin.ingredients.lotLoading')}</p>
+                                  ) : lotLoadError ? (
+                                    <p className="text-sm text-red-600">{lotLoadError}</p>
+                                  ) : lots.length === 0 ? (
+                                    <p className="text-sm text-muted">{t('admin.ingredients.lotEmpty')}</p>
+                                  ) : (
+                                    <Table>
+                                      <TableHeader>
+                                        <TableRow>
+                                          <TableHead>{t('admin.ingredients.lotCode')}</TableHead>
+                                          <TableHead>{t('admin.ingredients.lotReceivedAt')}</TableHead>
+                                          <TableHead>{t('admin.ingredients.lotReceivedQty')}</TableHead>
+                                          <TableHead>{t('admin.ingredients.lotRemainingQty')}</TableHead>
+                                          <TableHead>{t('admin.ingredients.lotUnitCost')}</TableHead>
+                                          <TableHead>{t('admin.ingredients.lotTotalCost')}</TableHead>
+                                          <TableHead>{t('admin.ingredients.lotReference')}</TableHead>
+                                        </TableRow>
+                                      </TableHeader>
+                                      <TableBody>
+                                        {lots.map(lot => {
+                                          const receivedQty = Number(lot.qty || 0);
+                                          const remainingQty = Number(lot.remainingQty || 0);
+                                          const unitCost = Number(lot.unitCost || 0);
+                                          return (
+                                            <TableRow key={lot.id}>
+                                              <TableCell>{lot.lotCode || '-'}</TableCell>
+                                              <TableCell>{new Date(lot.createdAt).toLocaleString()}</TableCell>
+                                              <TableCell>
+                                                {formatQty(convertQty(receivedQty, lot.ingredientUnit || item.unit, unitDisplayMode))}{' '}
+                                                {convertUnit(lot.ingredientUnit || item.unit, unitDisplayMode)}
+                                              </TableCell>
+                                              <TableCell>
+                                                {formatQty(convertQty(remainingQty, lot.ingredientUnit || item.unit, unitDisplayMode))}{' '}
+                                                {convertUnit(lot.ingredientUnit || item.unit, unitDisplayMode)}
+                                              </TableCell>
+                                              <TableCell>{lot.unitCost == null ? '-' : formatCost(unitCost)}</TableCell>
+                                              <TableCell>{lot.unitCost == null ? '-' : formatCost(receivedQty * unitCost)}</TableCell>
+                                              <TableCell>{lot.note || '-'}</TableCell>
+                                            </TableRow>
+                                          );
+                                        })}
+                                      </TableBody>
+                                    </Table>
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ) : null
+                      ];
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
             )}
           </Card>
 
@@ -895,42 +841,74 @@ export default function AdminIngredientsPage() {
             ) : transactions.length === 0 ? (
               <p className="text-sm text-muted">{t('admin.ingredients.txEmpty')}</p>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t('admin.ingredients.txTime')}</TableHead>
-                    <TableHead>{t('admin.ingredients.name')}</TableHead>
-                    <TableHead>{t('admin.ingredients.txAction')}</TableHead>
-                    <TableHead>{t('admin.ingredients.txQty')}</TableHead>
-                    <TableHead>{t('admin.ingredients.unit')}</TableHead>
-                    <TableHead>{t('admin.ingredients.txLot')}</TableHead>
-                    <TableHead>{t('admin.ingredients.txRemaining')}</TableHead>
-                    <TableHead>{t('admin.ingredients.restockNote')}</TableHead>
-                    <TableHead>{t('admin.ingredients.txBy')}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {transactions.map(tx => (
-                    <TableRow key={tx.id}>
-                      <TableCell>{new Date(tx.createdAt).toLocaleString()}</TableCell>
-                      <TableCell>{tx.ingredientName}</TableCell>
-                      <TableCell>{tx.type}</TableCell>
-                      <TableCell>{formatQty(convertQty(Number(tx.qty || 0), tx.ingredientUnit, unitDisplayMode))}</TableCell>
-                      <TableCell>{convertUnit(tx.ingredientUnit, unitDisplayMode)}</TableCell>
-                      <TableCell>
-                        {tx.type === 'IN' ? tx.lotCode || '-' : formatAllocation(tx.allocations, tx.ingredientUnit)}
-                      </TableCell>
-                      <TableCell>{tx.remainingQty == null ? '-' : formatQty(convertQty(Number(tx.remainingQty), tx.ingredientUnit, unitDisplayMode))}</TableCell>
-                      <TableCell>{tx.note || '-'}</TableCell>
-                      <TableCell>{tx.createdBy || 'system'}</TableCell>
+              <div className="max-h-[58vh] overflow-auto">
+                <Table>
+                  <TableHeader className="sticky top-0 z-20 bg-white">
+                    <TableRow>
+                      <TableHead className="bg-white">{t('admin.ingredients.txTime')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.ingredients.name')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.ingredients.txAction')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.ingredients.txQty')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.ingredients.unit')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.ingredients.txLot')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.ingredients.txRemaining')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.ingredients.restockNote')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.ingredients.txBy')}</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {transactions.map(tx => (
+                      <TableRow key={tx.id}>
+                        <TableCell>{new Date(tx.createdAt).toLocaleString()}</TableCell>
+                        <TableCell>{tx.ingredientName}</TableCell>
+                        <TableCell>{tx.type}</TableCell>
+                        <TableCell>{formatQty(convertQty(Number(tx.qty || 0), tx.ingredientUnit, unitDisplayMode))}</TableCell>
+                        <TableCell>{convertUnit(tx.ingredientUnit, unitDisplayMode)}</TableCell>
+                        <TableCell>
+                          {tx.type === 'IN' ? tx.lotCode || '-' : formatAllocation(tx.allocations, tx.ingredientUnit)}
+                        </TableCell>
+                        <TableCell>{tx.remainingQty == null ? '-' : formatQty(convertQty(Number(tx.remainingQty), tx.ingredientUnit, unitDisplayMode))}</TableCell>
+                        <TableCell>{tx.note || '-'}</TableCell>
+                        <TableCell>{tx.createdBy || 'system'}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             )}
           </Card>
 
-          <Dialog open={open} onOpenChange={setOpen}>
+          <Dialog open={detailOpen} onOpenChange={closeDetailModal}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{t('admin.ingredients.detailTitle')}</DialogTitle>
+              </DialogHeader>
+              {detailTarget ? (
+                <div className="space-y-3">
+                  <FormField label={t('admin.ingredients.name')}>
+                    <Input value={detailTarget.name} readOnly />
+                  </FormField>
+                  <FormField label={t('admin.ingredients.ingredientCode')}>
+                    <Input value={detailTarget.ingredientCode || '-'} readOnly />
+                  </FormField>
+                  <FormField label={t('admin.ingredients.unit')}>
+                    <Input value={convertUnit(detailTarget.unit, unitDisplayMode)} readOnly />
+                  </FormField>
+                  <FormField label={t('admin.ingredients.currentStock')}>
+                    <Input value={formatQty(convertQty(Number(detailTarget.currentStock || 0), detailTarget.unit, unitDisplayMode))} readOnly />
+                  </FormField>
+                  <FormField label={t('admin.ingredients.reorderLevel')}>
+                    <Input value={formatQty(convertQty(Number(detailTarget.reorderLevel || 0), detailTarget.unit, unitDisplayMode))} readOnly />
+                  </FormField>
+                  <FormField label={t('admin.ingredients.costTracking')}>
+                    <Input value={detailTarget.costTrackingMethod || '-'} readOnly />
+                  </FormField>
+                </div>
+              ) : null}
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={open} onOpenChange={closeIngredientModal}>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>{editing ? t('admin.ingredients.edit') : t('admin.ingredients.create')}</DialogTitle>
@@ -955,12 +933,20 @@ export default function AdminIngredientsPage() {
                 <FormField label={t('admin.ingredients.costTracking')}>
                   <Input value={form.costTrackingMethod} onChange={e => setForm({ ...form, costTrackingMethod: e.target.value })} />
                 </FormField>
-                <Button className="w-full">{t('common.save')}</Button>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <Button type="button" variant="ghost" onClick={() => closeIngredientModal(false)}>
+                    {t('common.close')}
+                  </Button>
+                  <Button type="button" variant="outline" onClick={cancelIngredientModal}>
+                    {t('common.cancel')}
+                  </Button>
+                  <Button>{t('common.save')}</Button>
+                </div>
               </form>
             </DialogContent>
           </Dialog>
 
-          <Dialog open={restockOpen} onOpenChange={setRestockOpen}>
+          <Dialog open={restockOpen} onOpenChange={closeRestockModal}>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>{t('admin.ingredients.restockTitle')}</DialogTitle>
@@ -994,12 +980,20 @@ export default function AdminIngredientsPage() {
                 <FormField label={t('admin.ingredients.restockNote')}>
                   <Input value={restockNote} onChange={e => setRestockNote(e.target.value)} />
                 </FormField>
-                <Button className="w-full">{t('common.save')}</Button>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <Button type="button" variant="ghost" onClick={() => closeRestockModal(false)}>
+                    {t('common.close')}
+                  </Button>
+                  <Button type="button" variant="outline" onClick={cancelRestockModal}>
+                    {t('common.cancel')}
+                  </Button>
+                  <Button>{t('common.save')}</Button>
+                </div>
               </form>
             </DialogContent>
           </Dialog>
 
-          <Dialog open={importOpen} onOpenChange={handleBulkImportOpenChange}>
+          <Dialog open={importOpen} onOpenChange={closeImportModal}>
             <DialogContent className="max-w-2xl">
               <DialogHeader>
                 <DialogTitle>{t('admin.ingredients.bulkImportTitle')}</DialogTitle>
@@ -1022,9 +1016,6 @@ export default function AdminIngredientsPage() {
                   </Button>
                   <Button type="button" variant="outline" onClick={validateBulkImport} disabled={importing}>
                     {t('admin.ingredients.bulkImportValidate')}
-                  </Button>
-                  <Button type="button" variant="outline" onClick={closeBulkImportModal} disabled={importing}>
-                    {t('common.cancel')}
                   </Button>
                 </div>
                 <FormField label="Excel (.xlsx)">
@@ -1055,7 +1046,6 @@ export default function AdminIngredientsPage() {
                                 {header || `column_${index + 1}`}
                               </TableHead>
                             ))}
-                            <TableHead className="whitespace-nowrap border-b border-border/70">{t('admin.ingredients.bulkImportStatus')}</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -1069,9 +1059,6 @@ export default function AdminIngredientsPage() {
                                   </TableCell>
                                 );
                               })}
-                              <TableCell className="whitespace-nowrap border-b border-border/50">
-                                {rawPreviewStatusByLine.get(rowIndex + 2) || '-'}
-                              </TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
@@ -1085,8 +1072,8 @@ export default function AdminIngredientsPage() {
                     <p className="text-sm font-semibold">
                       {t('admin.ingredients.bulkImportPreview', {
                         total: importPreview.totalRows,
-                        valid: importPreview.validRows,
-                        invalid: importPreview.invalidRows
+                        valid: importPreview.rows.length,
+                        invalid: importPreview.errors.length
                       })}
                     </p>
                     {importPreview.rows.length > 0 ? (
@@ -1094,7 +1081,6 @@ export default function AdminIngredientsPage() {
                         <Table className="min-w-max w-full border-separate border-spacing-0">
                           <TableHeader className="sticky top-0 z-10 bg-[#f8f1e8]">
                             <TableRow>
-                              <TableHead className="whitespace-nowrap border-b border-border/70 border-r border-border/40">Line</TableHead>
                               <TableHead className="whitespace-nowrap border-b border-border/70 border-r border-border/40">Code</TableHead>
                               <TableHead className="whitespace-nowrap border-b border-border/70 border-r border-border/40">
                                 {t('admin.ingredients.name')}
@@ -1108,21 +1094,12 @@ export default function AdminIngredientsPage() {
                               <TableHead className="whitespace-nowrap border-b border-border/70 border-r border-border/40">
                                 {t('admin.ingredients.totalCost')}
                               </TableHead>
-                              <TableHead className="whitespace-nowrap border-b border-border/70 border-r border-border/40">
-                                {t('admin.ingredients.reorderLevel')}
-                              </TableHead>
-                              <TableHead className="whitespace-nowrap border-b border-border/70 border-r border-border/40">
-                                {t('admin.ingredients.bulkImportStatus')}
-                              </TableHead>
-                              <TableHead className="whitespace-nowrap border-b border-border/70">{t('admin.ingredients.bulkImportNote')}</TableHead>
+                              <TableHead className="whitespace-nowrap border-b border-border/70">{t('admin.ingredients.reorderLevel')}</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {importPreview.rows.slice(0, 30).map((row, index) => (
-                              <TableRow key={`${row.lineNo}-${row.name}-${index}`}>
-                                <TableCell className="whitespace-nowrap tabular-nums border-b border-border/50 border-r border-border/30">
-                                  {row.lineNo}
-                                </TableCell>
+                            {importPreview.rows.slice(0, 10).map((row, index) => (
+                              <TableRow key={`${row.name}-${index}`}>
                                 <TableCell className="whitespace-nowrap font-mono text-xs border-b border-border/50 border-r border-border/30">
                                   {row.ingredientCode || '-'}
                                 </TableCell>
@@ -1130,31 +1107,15 @@ export default function AdminIngredientsPage() {
                                   {row.name}
                                 </TableCell>
                                 <TableCell className="whitespace-nowrap uppercase border-b border-border/50 border-r border-border/30">
-                                  {row.unit || '-'}
+                                  {row.unit}
                                 </TableCell>
                                 <TableCell className="whitespace-nowrap tabular-nums border-b border-border/50 border-r border-border/30">
-                                  {row.currentStock ?? '-'}
+                                  {row.currentStock}
                                 </TableCell>
                                 <TableCell className="whitespace-nowrap tabular-nums border-b border-border/50 border-r border-border/30">
                                   {row.totalCost ?? '-'}
                                 </TableCell>
-                                <TableCell className="whitespace-nowrap tabular-nums border-b border-border/50 border-r border-border/30">
-                                  {row.reorderLevel ?? '-'}
-                                </TableCell>
-                                <TableCell className="whitespace-nowrap border-b border-border/50 border-r border-border/30">
-                                  <span
-                                    className={
-                                      row.status === 'error' || row.status === 'failed'
-                                        ? 'text-red-700'
-                                        : row.status === 'success'
-                                          ? 'text-green-700'
-                                          : 'text-amber-700'
-                                    }
-                                  >
-                                    {row.statusText}
-                                  </span>
-                                </TableCell>
-                                <TableCell className="border-b border-border/50">{row.note}</TableCell>
+                                <TableCell className="whitespace-nowrap tabular-nums border-b border-border/50">{row.reorderLevel}</TableCell>
                               </TableRow>
                             ))}
                           </TableBody>
@@ -1163,15 +1124,27 @@ export default function AdminIngredientsPage() {
                     ) : (
                       <p className="text-xs text-muted">{t('admin.ingredients.bulkImportNoValidRowsPreview')}</p>
                     )}
-                    {importPreview.rows.length > 30 ? <p className="text-xs text-muted">Hiển thị 30 dòng đầu tiên.</p> : null}
+                    {importPreview.errors.length > 0 ? (
+                      <div>
+                        <p className="mb-1 text-xs font-semibold text-red-700">{t('admin.ingredients.bulkImportErrorPreview')}</p>
+                        <ul className="list-disc space-y-1 pl-5 text-xs text-red-700">
+                          {importPreview.errors.slice(0, 8).map(message => (
+                            <li key={message}>{message}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
                 {importResult ? <p className="text-sm text-muted">{importResult}</p> : null}
-                <div className="flex justify-end gap-2">
-                  <Button type="button" variant="outline" onClick={closeBulkImportModal} disabled={importing}>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <Button type="button" variant="ghost" onClick={() => closeImportModal(false)} disabled={importing}>
+                    {t('common.close')}
+                  </Button>
+                  <Button type="button" variant="outline" onClick={cancelImportModal} disabled={importing}>
                     {t('common.cancel')}
                   </Button>
-                  <Button type="button" onClick={importBulk} disabled={!canRunImport}>
+                  <Button type="button" onClick={importBulk} disabled={importing}>
                     {importing ? t('admin.ingredients.bulkImportRunning') : t('admin.ingredients.bulkImportRun')}
                   </Button>
                 </div>

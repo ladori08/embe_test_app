@@ -3,27 +3,41 @@ import {
   AuditLogDetail,
   AuditLogListItem,
   BakeRecord,
+  DatabaseBackupDetail,
+  DatabaseBackupFileSummary,
+  DatabaseBackupResponse,
+  DatabaseCollection,
+  DatabaseCollectionFields,
+  DatabaseFilterCondition,
+  DatabaseQueryResponse,
+  DatabaseQueryRow,
+  DatabaseRestoreBackupResponse,
+  DatabaseUnlockResponse,
   DashboardData,
   Ingredient,
   IngredientTransaction,
   Order,
+  OrderStatusTimelineEntry,
   Product,
+  ProductLot,
   ProductCategory,
   Recipe,
   Role,
   User
 } from '@/lib/types';
 
-const API_URL =
+export const API_URL =
   (globalThis as typeof globalThis & { process?: { env?: Record<string, string | undefined> } }).process?.env?.NEXT_PUBLIC_API_URL ||
   'http://localhost:8080';
 
 class ApiError extends Error {
   status: number;
+  details: unknown;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, details?: unknown) {
     super(message);
     this.status = status;
+    this.details = details;
   }
 }
 
@@ -43,13 +57,15 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   if (!response.ok) {
     let message = `Request failed (${response.status})`;
+    let details: unknown = null;
     try {
       const data = await response.json();
       message = data.message || message;
+      details = data.details;
     } catch {
       // keep default
     }
-    throw new ApiError(message, response.status);
+    throw new ApiError(message, response.status, details);
   }
 
   const text = await response.text();
@@ -115,6 +131,7 @@ export const api = {
   deleteProductCategory: (id: string) => request<void>(`/api/admin/product-categories/${id}`, { method: 'DELETE' }),
   nextProductSku: (category: string) =>
     request<{ sku: string }>(`/api/admin/products/next-sku?category=${encodeURIComponent(category)}`),
+  listProductLotsAdmin: (id: string) => request<ProductLot[]>(`/api/admin/products/${id}/lots`),
   createProduct: (payload: Partial<Product>) => request<Product>('/api/admin/products', { method: 'POST', body: JSON.stringify(payload) }),
   updateProduct: (id: string, payload: Partial<Product>) => request<Product>(`/api/admin/products/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
   deleteProduct: (id: string) => request<void>(`/api/admin/products/${id}`, { method: 'DELETE' }),
@@ -127,10 +144,23 @@ export const api = {
   produceBake: (payload: unknown) => request<BakeRecord>('/api/admin/bakes', { method: 'POST', body: JSON.stringify(payload) }),
   listBakes: () => request<BakeRecord[]>('/api/admin/bakes'),
 
-  createOrder: (payload: unknown) => request<Order>('/api/orders', { method: 'POST', body: JSON.stringify(payload) }),
+  createOrder: (payload: unknown, idempotencyKey?: string) =>
+    request<Order>('/api/orders', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      headers: idempotencyKey ? { 'X-Idempotency-Key': idempotencyKey } : undefined
+    }),
   listMyOrders: () => request<Order[]>('/api/orders'),
 
-  listOrdersAdmin: () => request<Order[]>('/api/admin/orders'),
+  listOrdersAdmin: (params: { status?: string; from?: string; to?: string } = {}) => {
+    const search = new URLSearchParams();
+    if (params.status) search.set('status', params.status);
+    if (params.from) search.set('from', params.from);
+    if (params.to) search.set('to', params.to);
+    const query = search.toString();
+    return request<Order[]>(`/api/admin/orders${query ? `?${query}` : ''}`);
+  },
+  getOrderTimelineAdmin: (id: string) => request<OrderStatusTimelineEntry[]>(`/api/admin/orders/${id}/timeline`),
   updateOrderStatus: (id: string, status: string) => request<Order>(`/api/admin/orders/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
 
   listUsersAdmin: () => request<AdminManagedUser[]>('/api/admin/users'),
@@ -150,6 +180,101 @@ export const api = {
     return request<AuditLogListItem[]>(`/api/admin/audit-logs${query ? `?${query}` : ''}`);
   },
   getAuditLog: (id: string) => request<AuditLogDetail>(`/api/admin/audit-logs/${id}`),
+
+  unlockDatabaseConsole: (password: string) =>
+    request<DatabaseUnlockResponse>('/api/admin/database/unlock', { method: 'POST', body: JSON.stringify({ password }) }),
+  listDatabaseCollections: (accessToken: string) =>
+    request<DatabaseCollection[]>('/api/admin/database/collections', {
+      headers: { 'X-Database-Access-Token': accessToken }
+    }),
+  listDatabaseCollectionFields: (accessToken: string, collection: string) =>
+    request<DatabaseCollectionFields>(`/api/admin/database/collections/${encodeURIComponent(collection)}/fields`, {
+      headers: { 'X-Database-Access-Token': accessToken }
+    }),
+  queryDatabase: (
+    accessToken: string,
+    payload: {
+      collection: string;
+      filters?: DatabaseFilterCondition[];
+      page?: number;
+      pageSize?: number;
+      sortField?: string;
+      sortDirection?: 'ASC' | 'DESC';
+    }
+  ) =>
+    request<DatabaseQueryResponse>('/api/admin/database/query', {
+      method: 'POST',
+      headers: { 'X-Database-Access-Token': accessToken },
+      body: JSON.stringify(payload)
+    }),
+  updateDatabaseDocument: (accessToken: string, collection: string, id: string, document: Record<string, unknown>) =>
+    request<DatabaseQueryRow>(`/api/admin/database/documents/${encodeURIComponent(collection)}/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'X-Database-Access-Token': accessToken },
+      body: JSON.stringify({ document })
+    }),
+  deleteDatabaseDocument: (accessToken: string, collection: string, id: string) =>
+    request<void>(`/api/admin/database/documents/${encodeURIComponent(collection)}/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: { 'X-Database-Access-Token': accessToken }
+    }),
+  backupDatabase: (accessToken: string) =>
+    request<DatabaseBackupResponse>('/api/admin/database/backup', {
+      method: 'POST',
+      headers: { 'X-Database-Access-Token': accessToken }
+    }),
+  listDatabaseBackups: (accessToken: string) =>
+    request<DatabaseBackupFileSummary[]>('/api/admin/database/backups', {
+      headers: { 'X-Database-Access-Token': accessToken }
+    }),
+  getDatabaseBackupDetail: (accessToken: string, fileName: string) =>
+    request<DatabaseBackupDetail>(`/api/admin/database/backups/${encodeURIComponent(fileName)}`, {
+      headers: { 'X-Database-Access-Token': accessToken }
+    }),
+  restoreDatabaseBackup: (accessToken: string, fileName: string) =>
+    request<DatabaseRestoreBackupResponse>('/api/admin/database/backups/restore', {
+      method: 'POST',
+      headers: { 'X-Database-Access-Token': accessToken },
+      body: JSON.stringify({ fileName })
+    }),
+  exportDatabase: async (
+    accessToken: string,
+    format: 'csv' | 'xlsx',
+    payload: {
+      collection: string;
+      filters?: DatabaseFilterCondition[];
+      sortField?: string;
+      sortDirection?: 'ASC' | 'DESC';
+    }
+  ) => {
+    const response = await fetch(`${API_URL}/api/admin/database/export?format=${encodeURIComponent(format)}`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Database-Access-Token': accessToken
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      let message = `Request failed (${response.status})`;
+      try {
+        const data = await response.json();
+        message = data.message || message;
+      } catch {
+        // keep default
+      }
+      throw new ApiError(message, response.status);
+    }
+
+    const blob = await response.blob();
+    const contentDisposition = response.headers.get('content-disposition') || '';
+    const fileNameMatch = contentDisposition.match(/filename\*?=(?:UTF-8''|\")?([^\";]+)/i);
+    const fileName = fileNameMatch?.[1] ? decodeURIComponent(fileNameMatch[1].replace(/\"/g, '')) : `database-export.${format}`;
+
+    return { blob, fileName };
+  },
 
   getDashboard: () => request<DashboardData>('/api/dashboard')
 };

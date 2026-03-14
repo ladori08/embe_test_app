@@ -9,34 +9,72 @@ interface DialogProps {
   children: React.ReactNode;
 }
 
+const DialogContext = React.createContext<((open: boolean) => void) | null>(null);
+
 export function Dialog({ open, onOpenChange, children }: DialogProps) {
+  React.useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onOpenChange(false);
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [open, onOpenChange]);
+
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/30 p-4">
-      <div
-        className="flex min-h-full items-start justify-center py-2 sm:items-center sm:py-4"
-        onClick={event => {
-          if (event.target === event.currentTarget) {
-            onOpenChange(false);
-          }
-        }}
-      >
-        {children}
+    <DialogContext.Provider value={onOpenChange}>
+      <div className="fixed inset-0 z-50 overflow-y-auto bg-black/30 p-4">
+        <div
+          className="flex min-h-full w-full items-start justify-center py-2 sm:items-center sm:py-4"
+          onMouseDown={event => {
+            if (event.target === event.currentTarget) {
+              onOpenChange(false);
+            }
+          }}
+        >
+          {children}
+        </div>
       </div>
-    </div>
+    </DialogContext.Provider>
   );
 }
 
-export function DialogContent({ className, onClick, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+interface DialogContentProps extends React.HTMLAttributes<HTMLDivElement> {
+  hideCloseButton?: boolean;
+}
+
+export function DialogContent({ className, hideCloseButton = false, children, ...props }: DialogContentProps) {
+  const onOpenChange = React.useContext(DialogContext);
+  const { onClick, ...restProps } = props;
+
   return (
     <div
-      className={cn('mx-auto w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl border border-border bg-white p-5 shadow-card', className)}
-      onClick={event => {
-        event.stopPropagation();
-        onClick?.(event);
+      className={cn('relative mx-auto w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl border border-border bg-white p-5 shadow-card', className)}
+      onClick={e => {
+        e.stopPropagation();
+        onClick?.(e);
       }}
-      {...props}
-    />
+      {...restProps}
+    >
+      {!hideCloseButton && onOpenChange ? (
+        <button
+          type="button"
+          aria-label="Close dialog"
+          className="absolute right-3 top-3 rounded-md px-2 py-1 text-lg leading-none text-muted transition hover:bg-[#f5ede3] hover:text-ink"
+          onClick={() => onOpenChange(false)}
+        >
+          ×
+        </button>
+      ) : null}
+      {children}
+    </div>
   );
 }
 

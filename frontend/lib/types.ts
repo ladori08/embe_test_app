@@ -67,6 +67,31 @@ export interface ProductCategory {
   legacySkus?: string[];
 }
 
+export interface ProductLotAllocation {
+  lotCode: string;
+  qty: number;
+  unitCost?: number | null;
+  subtotalCost?: number | null;
+  producedAt?: string | null;
+  reference?: string | null;
+}
+
+export interface ProductLot {
+  id: string;
+  productId: string;
+  lotCode: string;
+  bakeRecordId?: string | null;
+  recipeVersion?: number | null;
+  producedQty: number;
+  remainingQty: number;
+  unitCost?: number | null;
+  totalCost?: number | null;
+  producedAt: string;
+  note?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
 export interface RecipeItem {
   ingredientId: string;
   ingredientName?: string;
@@ -125,14 +150,28 @@ export interface OrderItem {
 
 export interface Order {
   id: string;
-  userId: string;
+  userId: string | null;
   status: OrderStatus;
   items: OrderItem[];
+  recipientName?: string | null;
+  recipientPhone?: string | null;
+  deliveryAddress?: string | null;
+  note?: string | null;
   subtotal: number;
   tax: number;
   total: number;
   stockDeducted: boolean;
+  cancelReason?: string | null;
+  holdExpiresAt?: string | null;
   createdAt: string;
+  updatedAt?: string | null;
+}
+
+export interface OrderStatusTimelineEntry {
+  status: OrderStatus;
+  changedAt: string;
+  actorEmail?: string | null;
+  cancelReason?: string | null;
 }
 
 export interface DashboardData {
@@ -172,4 +211,91 @@ export interface AuditLogDetail {
   afterData?: Record<string, unknown> | null;
   metadata?: Record<string, unknown> | null;
   createdAt: string;
+}
+
+export type DatabaseFilterOperator =
+  | 'EQ'
+  | 'NE'
+  | 'CONTAINS'
+  | 'STARTS_WITH'
+  | 'ENDS_WITH'
+  | 'GT'
+  | 'GTE'
+  | 'LT'
+  | 'LTE'
+  | 'IN'
+  | 'EXISTS';
+
+export interface DatabaseFilterCondition {
+  field: string;
+  operator: DatabaseFilterOperator;
+  value: string;
+}
+
+export interface DatabaseCollection {
+  name: string;
+  count: number;
+}
+
+export interface DatabaseCollectionFields {
+  collection: string;
+  fields: string[];
+}
+
+export interface DatabaseQueryRow {
+  id: string;
+  document: Record<string, unknown>;
+}
+
+export interface DatabaseQueryResponse {
+  collection: string;
+  total: number;
+  page: number;
+  pageSize: number;
+  rows: DatabaseQueryRow[];
+}
+
+export interface DatabaseUnlockResponse {
+  accessToken: string;
+  expiresAt: string;
+  backupFileName: string;
+  backupFilePath: string;
+}
+
+export interface DatabaseBackupResponse {
+  fileName: string;
+  filePath: string;
+  trigger: 'AUTO' | 'MANUAL' | string;
+  createdAt: string;
+}
+
+export interface DatabaseBackupFileSummary {
+  fileName: string;
+  filePath: string;
+  createdAt: string;
+  sizeBytes: number;
+}
+
+export interface DatabaseBackupCollectionSummary {
+  name: string;
+  count: number;
+}
+
+export interface DatabaseBackupDetail {
+  fileName: string;
+  filePath: string;
+  createdAt: string;
+  trigger: string;
+  actorEmail: string;
+  database: string;
+  totalDocuments: number;
+  collections: DatabaseBackupCollectionSummary[];
+}
+
+export interface DatabaseRestoreBackupResponse {
+  restoredFromFile: string;
+  restoredAt: string;
+  collectionsRestored: number;
+  documentsRestored: number;
+  preRestoreBackupFile: string;
 }

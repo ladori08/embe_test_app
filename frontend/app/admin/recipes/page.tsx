@@ -32,9 +32,10 @@ export default function AdminRecipesPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [error, setError] = useState('');
-  const [bulkImportMessage, setBulkImportMessage] = useState('');
 
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
+  const [detailRecipe, setDetailRecipe] = useState<Recipe | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
   const [productId, setProductId] = useState('');
   const [yieldQty, setYieldQty] = useState(1);
   const [lines, setLines] = useState<RecipeLineForm[]>([emptyLine()]);
@@ -55,9 +56,6 @@ export default function AdminRecipesPage() {
     () => new Map(ingredients.map(ingredient => [normalizeHeaderKey(ingredient.name), ingredient])),
     [ingredients]
   );
-  const hasImportPreview = importPreview != null;
-  const hasImportErrors = importPreview != null && importPreview.errors.length > 0;
-  const canRunImport = hasImportPreview && !hasImportErrors && (importPreview?.items.length || 0) > 0 && !importing;
 
   const load = async () => {
     const [recipeResult, productResult, ingredientResult] = await Promise.allSettled([api.listRecipes(), api.listProductsAdmin(), api.listIngredients()]);
@@ -129,32 +127,43 @@ export default function AdminRecipesPage() {
     setTab('form');
   };
 
+  const openDetail = (recipe: Recipe) => {
+    setDetailRecipe(recipe);
+    setDetailOpen(true);
+  };
+
+  const closeDetailModal = (nextOpen: boolean) => {
+    setDetailOpen(nextOpen);
+    if (!nextOpen) {
+      setDetailRecipe(null);
+    }
+  };
+
   const openBulkImport = () => {
+    if (!importProductId) {
+      setImportProductId(productId || products[0]?.id || '');
+    }
+    if (!importYieldQty) {
+      setImportYieldQty('1');
+    }
+    setImportOpen(true);
+  };
+
+  const closeImportModal = (nextOpen: boolean) => {
+    setImportOpen(nextOpen);
+  };
+
+  const resetImportDraft = () => {
     setImportProductId(productId || products[0]?.id || '');
     setImportYieldQty('1');
     setImportText('');
     setImportResult('');
     setImportPreview(null);
-    setImportOpen(true);
   };
 
-  const clearBulkImportState = () => {
-    setImportText('');
-    setImportResult('');
-    setImportPreview(null);
-    setImportYieldQty('1');
-  };
-
-  const closeBulkImportModal = () => {
+  const cancelImportModal = () => {
+    resetImportDraft();
     setImportOpen(false);
-    clearBulkImportState();
-  };
-
-  const handleBulkImportOpenChange = (nextOpen: boolean) => {
-    setImportOpen(nextOpen);
-    if (!nextOpen) {
-      clearBulkImportState();
-    }
   };
 
   const submit = async (e: FormEvent) => {
@@ -276,7 +285,6 @@ export default function AdminRecipesPage() {
   };
 
   const runBulkImport = async () => {
-    setBulkImportMessage('');
     if (!importProductId) {
       setImportResult(t('admin.recipes.noProducts'));
       return;
@@ -292,15 +300,6 @@ export default function AdminRecipesPage() {
     try {
       const analysis = importPreview ?? analyzeRecipeImport();
       const rowErrors = [...analysis.errors];
-      if (rowErrors.length > 0) {
-        setImportPreview(analysis);
-        setImportResult(
-          t('admin.recipes.bulkImportBlockedByErrors', {
-            count: rowErrors.length
-          })
-        );
-        return;
-      }
       const items = analysis.items;
       if (items.length === 0) {
         throw new Error(t('admin.recipes.bulkImportNoValidRows'));
@@ -314,13 +313,14 @@ export default function AdminRecipesPage() {
         await api.createRecipe(payload);
       }
 
-      setImportPreview(null);
-      setBulkImportMessage(
-        t('admin.recipes.bulkImportSuccessMessage', {
-          count: items.length
-        })
+      const previewErrors = rowErrors.slice(0, 5).join(' | ');
+      setImportResult(
+        `${t('admin.recipes.bulkImportResult')}: items=${items.length}${rowErrors.length ? `, skipped=${rowErrors.length}` : ''}${
+          previewErrors ? ` (${previewErrors})` : ''
+        }`
       );
-      closeBulkImportModal();
+      setImportPreview(null);
+      setImportOpen(false);
       await load();
     } catch (err) {
       setImportResult(err instanceof Error ? err.message : t('admin.recipes.failed'));
@@ -336,7 +336,6 @@ export default function AdminRecipesPage() {
         <AdminShell title={t('admin.nav.recipes')}>
           <Card>
             {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
-            {bulkImportMessage ? <p className="mb-3 text-sm text-green-700">{bulkImportMessage}</p> : null}
             <Tabs value={tab} onValueChange={setTab}>
               <TabsList>
                 <TabsTrigger value="list">{t('admin.recipes.tab.list')}</TabsTrigger>
@@ -352,35 +351,37 @@ export default function AdminRecipesPage() {
                 {recipes.length === 0 ? (
                   <p className="text-sm text-muted">{t('admin.recipes.empty')}</p>
                 ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>{t('admin.recipes.product')}</TableHead>
-                        <TableHead>{t('admin.recipes.version')}</TableHead>
-                        <TableHead>{t('admin.recipes.yield')}</TableHead>
-                        <TableHead>{t('admin.recipes.ingredients')}</TableHead>
-                        <TableHead></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {recipes.map(recipe => (
-                        <TableRow key={recipe.id}>
-                          <TableCell>{recipe.productName || productName.get(recipe.productId)}</TableCell>
-                          <TableCell>v{recipe.version ?? 1}</TableCell>
-                          <TableCell>{recipe.yieldQty}</TableCell>
-                          <TableCell>{recipe.items.length}</TableCell>
-                          <TableCell className="text-right">
-                            <button className="mr-3 text-sm underline" onClick={() => openEdit(recipe)}>
-                              {t('common.edit')}
-                            </button>
-                            <button className="text-sm text-red-600 underline" onClick={() => remove(recipe.id)}>
-                              {t('common.delete')}
-                            </button>
-                          </TableCell>
+                  <div className="max-h-[58vh] overflow-auto">
+                    <Table>
+                      <TableHeader className="sticky top-0 z-20 bg-white">
+                        <TableRow>
+                          <TableHead className="bg-white">{t('admin.recipes.product')}</TableHead>
+                          <TableHead className="bg-white">{t('admin.recipes.version')}</TableHead>
+                          <TableHead className="bg-white">{t('admin.recipes.yield')}</TableHead>
+                          <TableHead className="bg-white">{t('admin.recipes.ingredients')}</TableHead>
+                          <TableHead className="bg-white"></TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {recipes.map(recipe => (
+                          <TableRow key={recipe.id} className="cursor-pointer hover:bg-[#f8f1e8]/60" onClick={() => openDetail(recipe)}>
+                            <TableCell>{recipe.productName || productName.get(recipe.productId)}</TableCell>
+                            <TableCell>v{recipe.version ?? 1}</TableCell>
+                            <TableCell>{recipe.yieldQty}</TableCell>
+                            <TableCell>{recipe.items.length}</TableCell>
+                            <TableCell className="text-right" onClick={event => event.stopPropagation()}>
+                              <button className="mr-3 text-sm underline" onClick={() => openEdit(recipe)}>
+                                {t('common.edit')}
+                              </button>
+                              <button className="text-sm text-red-600 underline" onClick={() => remove(recipe.id)}>
+                                {t('common.delete')}
+                              </button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
                 )}
               </TabsContent>
 
@@ -449,7 +450,58 @@ export default function AdminRecipesPage() {
             </Tabs>
           </Card>
 
-          <Dialog open={importOpen} onOpenChange={handleBulkImportOpenChange}>
+          <Dialog open={detailOpen} onOpenChange={closeDetailModal}>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>{t('admin.recipes.detailTitle')}</DialogTitle>
+              </DialogHeader>
+              {detailRecipe ? (
+                <div className="space-y-3">
+                  <FormField label={t('admin.recipes.product')}>
+                    <Input value={detailRecipe.productName || productName.get(detailRecipe.productId) || '-'} readOnly />
+                  </FormField>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <FormField label={t('admin.recipes.version')}>
+                      <Input value={`v${detailRecipe.version ?? 1}`} readOnly />
+                    </FormField>
+                    <FormField label={t('admin.recipes.yieldPerBatch')}>
+                      <Input value={String(detailRecipe.yieldQty)} readOnly />
+                    </FormField>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-sm font-semibold text-muted">{t('admin.recipes.ingredients')}</p>
+                    {detailRecipe.items.length === 0 ? (
+                      <p className="text-sm text-muted">{t('admin.recipes.noIngredients')}</p>
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>{t('admin.recipes.ingredients')}</TableHead>
+                            <TableHead>{t('admin.recipes.qty')}</TableHead>
+                            <TableHead>{t('admin.recipes.unit')}</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {detailRecipe.items.map((item, index) => {
+                            const ingredient = ingredientById.get(item.ingredientId);
+                            return (
+                              <TableRow key={`${detailRecipe.id}-${item.ingredientId}-${index}`}>
+                                <TableCell>{item.ingredientName || ingredient?.name || item.ingredientId}</TableCell>
+                                <TableCell>{item.qtyPerBatch}</TableCell>
+                                <TableCell>{item.unit || ingredient?.unit || '-'}</TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={importOpen} onOpenChange={closeImportModal}>
             <DialogContent className="max-w-2xl">
               <DialogHeader>
                 <DialogTitle>{t('admin.recipes.bulkImportTitle')}</DialogTitle>
@@ -539,11 +591,14 @@ export default function AdminRecipesPage() {
                   </div>
                 ) : null}
                 {importResult ? <p className="text-sm text-muted">{importResult}</p> : null}
-                <div className="flex justify-end gap-2">
-                  <Button type="button" variant="outline" onClick={closeBulkImportModal} disabled={importing}>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <Button type="button" variant="ghost" onClick={() => closeImportModal(false)} disabled={importing}>
+                    {t('common.close')}
+                  </Button>
+                  <Button type="button" variant="outline" onClick={cancelImportModal} disabled={importing}>
                     {t('common.cancel')}
                   </Button>
-                  <Button type="button" onClick={runBulkImport} disabled={!canRunImport}>
+                  <Button type="button" onClick={runBulkImport} disabled={importing}>
                     {importing ? t('admin.recipes.bulkImportRunning') : t('admin.recipes.bulkImportRun')}
                   </Button>
                 </div>

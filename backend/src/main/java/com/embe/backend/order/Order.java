@@ -23,6 +23,22 @@ public class Order {
 
     private OrderStatus status;
 
+    private String recipientName;
+
+    private String recipientPhone;
+
+    private String deliveryAddress;
+
+    private String note;
+
+    @Indexed(unique = true, sparse = true)
+    private String idempotencyKey;
+
+    @Indexed
+    private Instant holdExpiresAt;
+
+    private String cancelReason;
+
     @Field(targetType = FieldType.DECIMAL128)
     private BigDecimal subtotal;
 
@@ -69,6 +85,62 @@ public class Order {
 
     public void setStatus(OrderStatus status) {
         this.status = status;
+    }
+
+    public String getRecipientName() {
+        return recipientName;
+    }
+
+    public void setRecipientName(String recipientName) {
+        this.recipientName = recipientName;
+    }
+
+    public String getRecipientPhone() {
+        return recipientPhone;
+    }
+
+    public void setRecipientPhone(String recipientPhone) {
+        this.recipientPhone = recipientPhone;
+    }
+
+    public String getDeliveryAddress() {
+        return deliveryAddress;
+    }
+
+    public void setDeliveryAddress(String deliveryAddress) {
+        this.deliveryAddress = deliveryAddress;
+    }
+
+    public String getNote() {
+        return note;
+    }
+
+    public void setNote(String note) {
+        this.note = note;
+    }
+
+    public String getIdempotencyKey() {
+        return idempotencyKey;
+    }
+
+    public void setIdempotencyKey(String idempotencyKey) {
+        this.idempotencyKey = idempotencyKey;
+    }
+
+    public Instant getHoldExpiresAt() {
+        return holdExpiresAt;
+    }
+
+    public void setHoldExpiresAt(Instant holdExpiresAt) {
+        this.holdExpiresAt = holdExpiresAt;
+    }
+
+    public String getCancelReason() {
+        return cancelReason;
+    }
+
+    public void setCancelReason(String cancelReason) {
+        this.cancelReason = cancelReason;
     }
 
     public BigDecimal getSubtotal() {

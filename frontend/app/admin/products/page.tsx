@@ -13,9 +13,9 @@ import { FormField } from '@/components/ui/form';
 import { Select } from '@/components/ui/select';
 import { useI18n } from '@/components/language-context';
 import { api } from '@/lib/api';
-import { Product, ProductCategory } from '@/lib/types';
+import { Product, ProductCategory, ProductLot } from '@/lib/types';
 
-const emptyForm = { name: '', sku: '', category: '', price: 0, cost: 0, currentStock: 0, isActive: true, images: [] as string[], regenerateSku: false };
+const emptyForm = { name: '', sku: '', category: '', price: 0, currentStock: 0, isActive: true, images: [] as string[], regenerateSku: false };
 const ALL_CATEGORIES_FILTER = '__ALL_CATEGORIES__';
 
 export default function AdminProductsPage() {
@@ -35,6 +35,10 @@ export default function AdminProductsPage() {
   const [categoryDeletingId, setCategoryDeletingId] = useState('');
   const [regeneratingSku, setRegeneratingSku] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState(ALL_CATEGORIES_FILTER);
+  const [expandedLots, setExpandedLots] = useState<Record<string, boolean>>({});
+  const [lotsByProduct, setLotsByProduct] = useState<Record<string, ProductLot[]>>({});
+  const [lotsLoading, setLotsLoading] = useState<Record<string, boolean>>({});
+  const [lotsError, setLotsError] = useState<Record<string, string>>({});
   const { t, money } = useI18n();
 
   const loadProducts = async () => {
@@ -93,17 +97,32 @@ export default function AdminProductsPage() {
   }, [open, editing, form.category]);
 
   const openCreate = () => {
+    if (editing) {
+      setForm(emptyForm);
+    }
     setEditing(null);
-    setForm(emptyForm);
     setError('');
     setOpen(true);
   };
 
   const openEdit = (item: Product) => {
+    if (editing?.id !== item.id) {
+      setForm({ ...item, regenerateSku: false });
+    }
     setEditing(item);
-    setForm({ ...item, regenerateSku: false });
     setError('');
     setOpen(true);
+  };
+
+  const closeProductModal = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+  };
+
+  const cancelProductModal = () => {
+    setEditing(null);
+    setForm(emptyForm);
+    setError('');
+    setOpen(false);
   };
 
   const handleCategoryChange = (value: string) => {
@@ -147,11 +166,13 @@ export default function AdminProductsPage() {
       return;
     }
     const payload = {
-      ...form,
+      name: form.name,
+      sku: form.sku,
+      category: form.category,
       price: Number(form.price),
-      cost: Number(form.cost),
       currentStock: Number(form.currentStock),
       isActive: String(form.isActive) === 'true',
+      images: form.images,
       regenerateSku: editing ? Boolean(form.regenerateSku) : undefined
     };
     try {
@@ -160,6 +181,9 @@ export default function AdminProductsPage() {
       } else {
         await api.createProduct(payload);
       }
+      setEditing(null);
+      setForm(emptyForm);
+      setError('');
       setOpen(false);
       await loadProducts();
     } catch (err) {
@@ -172,11 +196,35 @@ export default function AdminProductsPage() {
     await loadProducts();
   };
 
+  const loadLots = async (productId: string) => {
+    setLotsLoading(prev => ({ ...prev, [productId]: true }));
+    setLotsError(prev => ({ ...prev, [productId]: '' }));
+    try {
+      const rows = await api.listProductLotsAdmin(productId);
+      setLotsByProduct(prev => ({ ...prev, [productId]: rows }));
+    } catch (err) {
+      setLotsError(prev => ({
+        ...prev,
+        [productId]: err instanceof Error ? err.message : 'Failed to load product lots'
+      }));
+    } finally {
+      setLotsLoading(prev => ({ ...prev, [productId]: false }));
+    }
+  };
+
+  const toggleLots = (item: Product) => {
+    const nextOpen = !expandedLots[item.id];
+    setExpandedLots(prev => ({ ...prev, [item.id]: nextOpen }));
+    if (nextOpen && lotsByProduct[item.id] === undefined && !lotsLoading[item.id]) {
+      void loadLots(item.id);
+    }
+  };
+
   const openCategoryManager = () => {
+    if (categoryDialogOpen) {
+      return;
+    }
     setCategoryDialogOpen(true);
-    setCategoryError('');
-    setEditingCategory(null);
-    setCategoryName('');
   };
 
   const openCategoryEdit = (category: ProductCategory) => {
@@ -188,6 +236,16 @@ export default function AdminProductsPage() {
   const resetCategoryForm = () => {
     setEditingCategory(null);
     setCategoryName('');
+  };
+
+  const closeCategoryDialog = (nextOpen: boolean) => {
+    setCategoryDialogOpen(nextOpen);
+  };
+
+  const cancelCategoryDialog = () => {
+    resetCategoryForm();
+    setCategoryError('');
+    setCategoryDialogOpen(false);
   };
 
   const submitCategory = async (e: FormEvent) => {
@@ -276,7 +334,7 @@ export default function AdminProductsPage() {
       <RequireRole role="ADMIN">
         <AdminShell title={t('admin.nav.products')}>
           <Card>
-            <div className="mb-3 flex flex-wrap justify-between gap-2">
+            <div className="mb-3 flex flex-wrap justify-between gap-2 bg-white">
               <p className="text-sm text-muted">{t('admin.products.help')}</p>
               <div className="flex flex-wrap items-center gap-2">
                 <Select
@@ -307,43 +365,110 @@ export default function AdminProductsPage() {
             ) : filteredItems.length === 0 ? (
               <p className="text-sm text-muted">{t('admin.products.filterEmpty')}</p>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t('admin.products.name')}</TableHead>
-                    <TableHead>{t('admin.products.sku')}</TableHead>
-                    <TableHead>{t('admin.products.category')}</TableHead>
-                    <TableHead>{t('admin.products.price')}</TableHead>
-                    <TableHead>{t('admin.products.stock')}</TableHead>
-                    <TableHead>{t('admin.products.status')}</TableHead>
-                    <TableHead></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredItems.map(item => (
-                    <TableRow key={item.id}>
-                      <TableCell>{item.name}</TableCell>
-                      <TableCell>{item.sku}</TableCell>
-                      <TableCell>{item.category}</TableCell>
-                      <TableCell>{money(item.price)}</TableCell>
-                      <TableCell>{item.currentStock}</TableCell>
-                      <TableCell>{item.isActive ? t('admin.products.active') : t('admin.products.hidden')}</TableCell>
-                      <TableCell className="text-right">
-                        <button className="mr-3 text-sm underline" onClick={() => openEdit(item)}>
-                          {t('common.edit')}
-                        </button>
-                        <button className="text-sm text-red-600 underline" onClick={() => remove(item.id)}>
-                          {t('common.delete')}
-                        </button>
-                      </TableCell>
+              <div className="max-h-[58vh] overflow-auto">
+                <Table>
+                  <TableHeader className="sticky top-0 z-20 bg-white">
+                    <TableRow>
+                      <TableHead className="bg-white">{t('admin.products.name')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.products.sku')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.products.category')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.products.price')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.products.stock')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.products.status')}</TableHead>
+                      <TableHead className="bg-white"></TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredItems.map(item => {
+                      const isExpanded = !!expandedLots[item.id];
+                      const lots = lotsByProduct[item.id] || [];
+                      const isLotLoading = !!lotsLoading[item.id];
+                      const lotLoadError = lotsError[item.id] || '';
+                      return [
+                        <TableRow key={item.id} className="hover:bg-[#f8f1e8]/60">
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                className="rounded-md border border-border bg-white px-2 py-0.5 text-xs text-muted hover:bg-[#f5ede3] hover:text-ink"
+                                onClick={event => {
+                                  event.stopPropagation();
+                                  toggleLots(item);
+                                }}
+                              >
+                                {isExpanded ? '▾' : '▸'}
+                              </button>
+                              <span>{item.name}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>{item.sku}</TableCell>
+                          <TableCell>{item.category}</TableCell>
+                          <TableCell>{money(item.price)}</TableCell>
+                          <TableCell>{item.currentStock}</TableCell>
+                          <TableCell>{item.isActive ? t('admin.products.active') : t('admin.products.hidden')}</TableCell>
+                          <TableCell className="text-right">
+                            <button className="mr-3 text-sm underline" onClick={() => openEdit(item)}>
+                              {t('common.edit')}
+                            </button>
+                            <button className="text-sm text-red-600 underline" onClick={() => remove(item.id)}>
+                              {t('common.delete')}
+                            </button>
+                          </TableCell>
+                        </TableRow>,
+                        isExpanded ? (
+                          <TableRow key={`${item.id}-lots`} className="bg-[#fbf7f0]">
+                            <TableCell colSpan={7}>
+                              <div className="space-y-2">
+                                <p className="text-sm font-semibold text-muted">
+                                  {t('admin.products.lotsTitle')}: {item.name} ({item.sku})
+                                </p>
+                                {isLotLoading ? (
+                                  <p className="text-sm text-muted">{t('admin.products.lotsLoading')}</p>
+                                ) : lotLoadError ? (
+                                  <p className="text-sm text-red-600">{lotLoadError}</p>
+                                ) : lots.length === 0 ? (
+                                  <p className="text-sm text-muted">{t('admin.products.lotsEmpty')}</p>
+                                ) : (
+                                  <Table>
+                                    <TableHeader>
+                                      <TableRow>
+                                        <TableHead>{t('admin.products.lotCode')}</TableHead>
+                                        <TableHead>{t('admin.products.lotProducedAt')}</TableHead>
+                                        <TableHead>{t('admin.products.lotProducedQty')}</TableHead>
+                                        <TableHead>{t('admin.products.lotRemainingQty')}</TableHead>
+                                        <TableHead>{t('admin.products.lotUnitCost')}</TableHead>
+                                        <TableHead>{t('admin.products.lotTotalCost')}</TableHead>
+                                        <TableHead>{t('admin.products.lotReference')}</TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {lots.map(lot => (
+                                        <TableRow key={lot.id}>
+                                          <TableCell>{lot.lotCode}</TableCell>
+                                          <TableCell>{new Date(lot.producedAt).toLocaleString()}</TableCell>
+                                          <TableCell>{lot.producedQty}</TableCell>
+                                          <TableCell>{lot.remainingQty}</TableCell>
+                                          <TableCell>{lot.unitCost == null ? '-' : money(lot.unitCost)}</TableCell>
+                                          <TableCell>{lot.totalCost == null ? '-' : money(lot.totalCost)}</TableCell>
+                                          <TableCell>{lot.note || lot.bakeRecordId || '-'}</TableCell>
+                                        </TableRow>
+                                      ))}
+                                    </TableBody>
+                                  </Table>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ) : null
+                      ];
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
             )}
           </Card>
 
-          <Dialog open={open} onOpenChange={setOpen}>
+          <Dialog open={open} onOpenChange={closeProductModal}>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>{editing ? t('admin.products.edit') : t('admin.products.create')}</DialogTitle>
@@ -394,7 +519,8 @@ export default function AdminProductsPage() {
                   <Input type="number" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} required />
                 </FormField>
                 <FormField label={t('admin.products.cost')}>
-                  <Input type="number" value={form.cost} onChange={e => setForm({ ...form, cost: e.target.value })} required />
+                  <Input value={form.cost ?? 0} readOnly className="bg-[#f8f1e8]" />
+                  <p className="text-xs text-muted">{t('admin.products.costAuto')}</p>
                 </FormField>
                 <FormField label={t('admin.products.currentStock')}>
                   <Input type="number" value={form.currentStock} onChange={e => setForm({ ...form, currentStock: e.target.value })} required />
@@ -405,12 +531,20 @@ export default function AdminProductsPage() {
                     <option value="false">{t('admin.products.inactive')}</option>
                   </Select>
                 </FormField>
-                <Button className="w-full">{t('common.save')}</Button>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <Button type="button" variant="ghost" onClick={() => closeProductModal(false)}>
+                    {t('common.close')}
+                  </Button>
+                  <Button type="button" variant="outline" onClick={cancelProductModal}>
+                    {t('common.cancel')}
+                  </Button>
+                  <Button>{t('common.save')}</Button>
+                </div>
               </form>
             </DialogContent>
           </Dialog>
 
-          <Dialog open={categoryDialogOpen} onOpenChange={setCategoryDialogOpen}>
+          <Dialog open={categoryDialogOpen} onOpenChange={closeCategoryDialog}>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>{t('admin.products.categoriesTitle')}</DialogTitle>
@@ -474,6 +608,14 @@ export default function AdminProductsPage() {
                   </Table>
                 </div>
               )}
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                <Button type="button" variant="ghost" onClick={() => closeCategoryDialog(false)}>
+                  {t('common.close')}
+                </Button>
+                <Button type="button" variant="outline" onClick={cancelCategoryDialog}>
+                  {t('common.cancel')}
+                </Button>
+              </div>
             </DialogContent>
           </Dialog>
         </AdminShell>

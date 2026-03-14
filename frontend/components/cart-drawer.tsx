@@ -10,6 +10,7 @@ export function CartDrawer({ open, onOpenChange }: { open: boolean; onOpenChange
   const { items, subtotal, updateQty, removeItem } = useCart();
   const { t, moneyCompact } = useI18n();
   const router = useRouter();
+  const hasRealtimeStockConflict = items.some(item => item.qty > item.maxQty);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -35,21 +36,38 @@ export function CartDrawer({ open, onOpenChange }: { open: boolean; onOpenChange
                   -
                 </Button>
                 <span className="w-10 text-center">{item.qty}</span>
-                <Button variant="outline" onClick={() => updateQty(item.productId, item.qty + 1)}>
+                <Button variant="outline" onClick={() => updateQty(item.productId, item.qty + 1)} disabled={item.qty >= item.maxQty}>
                   +
                 </Button>
               </div>
+              {item.qty > item.maxQty ? (
+                <p className="mt-2 text-xs text-red-600">{t('shop.insufficientStock', { name: item.name, available: item.maxQty })}</p>
+              ) : null}
             </div>
           ))}
         </div>
         <div className="mt-6 border-t border-border pt-4">
+          {hasRealtimeStockConflict ? (
+            <p className="mb-3 rounded-xl bg-[#fff1f1] p-2 text-xs text-red-600">{t('checkout.stockSyncWarning')}</p>
+          ) : null}
           <div className="mb-3 flex justify-between text-sm">
             <span className="text-muted">{t('common.subtotal')}</span>
             <span className="font-semibold">{moneyCompact(subtotal)}</span>
           </div>
           <Button
-            className="w-full"
+            variant="outline"
+            className="mb-2 w-full"
             disabled={items.length === 0}
+            onClick={() => {
+              onOpenChange(false);
+              router.push('/shop/cart');
+            }}
+          >
+            {t('drawer.viewCart')}
+          </Button>
+          <Button
+            className="w-full"
+            disabled={items.length === 0 || hasRealtimeStockConflict}
             onClick={() => {
               onOpenChange(false);
               router.push('/shop/checkout');
