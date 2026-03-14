@@ -3,6 +3,16 @@ import {
   AuditLogDetail,
   AuditLogListItem,
   BakeRecord,
+  DatabaseBackupDetail,
+  DatabaseBackupFileSummary,
+  DatabaseBackupResponse,
+  DatabaseCollection,
+  DatabaseCollectionFields,
+  DatabaseFilterCondition,
+  DatabaseQueryResponse,
+  DatabaseQueryRow,
+  DatabaseRestoreBackupResponse,
+  DatabaseUnlockResponse,
   DashboardData,
   Ingredient,
   IngredientTransaction,
@@ -170,6 +180,101 @@ export const api = {
     return request<AuditLogListItem[]>(`/api/admin/audit-logs${query ? `?${query}` : ''}`);
   },
   getAuditLog: (id: string) => request<AuditLogDetail>(`/api/admin/audit-logs/${id}`),
+
+  unlockDatabaseConsole: (password: string) =>
+    request<DatabaseUnlockResponse>('/api/admin/database/unlock', { method: 'POST', body: JSON.stringify({ password }) }),
+  listDatabaseCollections: (accessToken: string) =>
+    request<DatabaseCollection[]>('/api/admin/database/collections', {
+      headers: { 'X-Database-Access-Token': accessToken }
+    }),
+  listDatabaseCollectionFields: (accessToken: string, collection: string) =>
+    request<DatabaseCollectionFields>(`/api/admin/database/collections/${encodeURIComponent(collection)}/fields`, {
+      headers: { 'X-Database-Access-Token': accessToken }
+    }),
+  queryDatabase: (
+    accessToken: string,
+    payload: {
+      collection: string;
+      filters?: DatabaseFilterCondition[];
+      page?: number;
+      pageSize?: number;
+      sortField?: string;
+      sortDirection?: 'ASC' | 'DESC';
+    }
+  ) =>
+    request<DatabaseQueryResponse>('/api/admin/database/query', {
+      method: 'POST',
+      headers: { 'X-Database-Access-Token': accessToken },
+      body: JSON.stringify(payload)
+    }),
+  updateDatabaseDocument: (accessToken: string, collection: string, id: string, document: Record<string, unknown>) =>
+    request<DatabaseQueryRow>(`/api/admin/database/documents/${encodeURIComponent(collection)}/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'X-Database-Access-Token': accessToken },
+      body: JSON.stringify({ document })
+    }),
+  deleteDatabaseDocument: (accessToken: string, collection: string, id: string) =>
+    request<void>(`/api/admin/database/documents/${encodeURIComponent(collection)}/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: { 'X-Database-Access-Token': accessToken }
+    }),
+  backupDatabase: (accessToken: string) =>
+    request<DatabaseBackupResponse>('/api/admin/database/backup', {
+      method: 'POST',
+      headers: { 'X-Database-Access-Token': accessToken }
+    }),
+  listDatabaseBackups: (accessToken: string) =>
+    request<DatabaseBackupFileSummary[]>('/api/admin/database/backups', {
+      headers: { 'X-Database-Access-Token': accessToken }
+    }),
+  getDatabaseBackupDetail: (accessToken: string, fileName: string) =>
+    request<DatabaseBackupDetail>(`/api/admin/database/backups/${encodeURIComponent(fileName)}`, {
+      headers: { 'X-Database-Access-Token': accessToken }
+    }),
+  restoreDatabaseBackup: (accessToken: string, fileName: string) =>
+    request<DatabaseRestoreBackupResponse>('/api/admin/database/backups/restore', {
+      method: 'POST',
+      headers: { 'X-Database-Access-Token': accessToken },
+      body: JSON.stringify({ fileName })
+    }),
+  exportDatabase: async (
+    accessToken: string,
+    format: 'csv' | 'xlsx',
+    payload: {
+      collection: string;
+      filters?: DatabaseFilterCondition[];
+      sortField?: string;
+      sortDirection?: 'ASC' | 'DESC';
+    }
+  ) => {
+    const response = await fetch(`${API_URL}/api/admin/database/export?format=${encodeURIComponent(format)}`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Database-Access-Token': accessToken
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      let message = `Request failed (${response.status})`;
+      try {
+        const data = await response.json();
+        message = data.message || message;
+      } catch {
+        // keep default
+      }
+      throw new ApiError(message, response.status);
+    }
+
+    const blob = await response.blob();
+    const contentDisposition = response.headers.get('content-disposition') || '';
+    const fileNameMatch = contentDisposition.match(/filename\*?=(?:UTF-8''|\")?([^\";]+)/i);
+    const fileName = fileNameMatch?.[1] ? decodeURIComponent(fileNameMatch[1].replace(/\"/g, '')) : `database-export.${format}`;
+
+    return { blob, fileName };
+  },
 
   getDashboard: () => request<DashboardData>('/api/dashboard')
 };

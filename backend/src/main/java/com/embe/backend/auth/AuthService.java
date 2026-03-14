@@ -85,6 +85,18 @@ public class AuthService {
         return effectiveRoles(currentRoles()).contains(role);
     }
 
+    public void verifyCurrentUserPassword(String rawPassword) {
+        if (rawPassword == null || rawPassword.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Password is required");
+        }
+        AuthPrincipal principal = currentPrincipal();
+        UserAccount user = userRepository.findById(principal.userId())
+                .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "User not found"));
+        if (!passwordEncoder.matches(rawPassword, user.getPasswordHash())) {
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "Invalid password");
+        }
+    }
+
     private Set<Role> effectiveRoles(Set<Role> rawRoles) {
         Set<Role> effective = new LinkedHashSet<>();
         if (rawRoles != null) {

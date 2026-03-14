@@ -4,10 +4,14 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/components/language-context';
+import { useAuth } from '@/components/auth-context';
+import { isSuperAdmin } from '@/lib/permissions';
 
 export function AdminShell({ children, title }: { children: React.ReactNode; title: string }) {
   const pathname = usePathname();
   const { t } = useI18n();
+  const { user } = useAuth();
+  const superadmin = isSuperAdmin(user);
 
   const links = [
     { href: '/admin/dashboard', label: t('admin.nav.dashboard') },
@@ -17,7 +21,8 @@ export function AdminShell({ children, title }: { children: React.ReactNode; tit
     { href: '/admin/recipes', label: t('admin.nav.recipes') },
     { href: '/admin/production', label: t('admin.nav.production') },
     { href: '/admin/orders', label: t('admin.nav.orders') },
-    { href: '/admin/history', label: t('admin.nav.history') }
+    { href: '/admin/history', label: t('admin.nav.history') },
+    ...(superadmin ? [{ href: '/admin/database', label: t('admin.nav.database') }] : [])
   ];
 
   return (

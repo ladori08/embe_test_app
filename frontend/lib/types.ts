@@ -212,3 +212,90 @@ export interface AuditLogDetail {
   metadata?: Record<string, unknown> | null;
   createdAt: string;
 }
+
+export type DatabaseFilterOperator =
+  | 'EQ'
+  | 'NE'
+  | 'CONTAINS'
+  | 'STARTS_WITH'
+  | 'ENDS_WITH'
+  | 'GT'
+  | 'GTE'
+  | 'LT'
+  | 'LTE'
+  | 'IN'
+  | 'EXISTS';
+
+export interface DatabaseFilterCondition {
+  field: string;
+  operator: DatabaseFilterOperator;
+  value: string;
+}
+
+export interface DatabaseCollection {
+  name: string;
+  count: number;
+}
+
+export interface DatabaseCollectionFields {
+  collection: string;
+  fields: string[];
+}
+
+export interface DatabaseQueryRow {
+  id: string;
+  document: Record<string, unknown>;
+}
+
+export interface DatabaseQueryResponse {
+  collection: string;
+  total: number;
+  page: number;
+  pageSize: number;
+  rows: DatabaseQueryRow[];
+}
+
+export interface DatabaseUnlockResponse {
+  accessToken: string;
+  expiresAt: string;
+  backupFileName: string;
+  backupFilePath: string;
+}
+
+export interface DatabaseBackupResponse {
+  fileName: string;
+  filePath: string;
+  trigger: 'AUTO' | 'MANUAL' | string;
+  createdAt: string;
+}
+
+export interface DatabaseBackupFileSummary {
+  fileName: string;
+  filePath: string;
+  createdAt: string;
+  sizeBytes: number;
+}
+
+export interface DatabaseBackupCollectionSummary {
+  name: string;
+  count: number;
+}
+
+export interface DatabaseBackupDetail {
+  fileName: string;
+  filePath: string;
+  createdAt: string;
+  trigger: string;
+  actorEmail: string;
+  database: string;
+  totalDocuments: number;
+  collections: DatabaseBackupCollectionSummary[];
+}
+
+export interface DatabaseRestoreBackupResponse {
+  restoredFromFile: string;
+  restoredAt: string;
+  collectionsRestored: number;
+  documentsRestored: number;
+  preRestoreBackupFile: string;
+}
