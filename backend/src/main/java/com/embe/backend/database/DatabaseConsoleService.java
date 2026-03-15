@@ -26,12 +26,16 @@ import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 @Service
@@ -41,6 +45,7 @@ public class DatabaseConsoleService {
     private static final int DEFAULT_PAGE_SIZE = 50;
     private static final int MAX_PAGE_SIZE = 500;
     private static final int MAX_EXPORT_ROWS = 20_000;
+    private static final Pattern REFERENCE_KEY_PATTERN = Pattern.compile("(?i)(^_id$|^id$|.*id$|.*code$|.*sku$|.*email$)");
 
     private final MongoTemplate mongoTemplate;
     private final AuthService authService;
@@ -161,17 +166,46 @@ public class DatabaseConsoleService {
         return toRow(replacement);
     }
 
+    public DatabaseDependencyCheckResponse checkDependencies(String accessToken, String collectionName, String documentId) {
+        validateAccess(accessToken);
+        String collection = normalizeCollection(collectionName);
+        ensureCollectionExists(collection);
+
+        Object resolvedId = resolveDocumentId(documentId);
+        Document targetDocument = findDocumentByResolvedId(collection, resolvedId, documentId);
+        if (targetDocument == null) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Document not found");
+        }
+
+        return buildDependencyReport(collection, targetDocument);
+    }
+
     public void deleteDocument(String accessToken, String collectionName, String documentId) {
         validateAccess(accessToken);
         String collection = normalizeCollection(collectionName);
         ensureCollectionExists(collection);
 
         Object resolvedId = resolveDocumentId(documentId);
-        Query query = Query.query(Criteria.where("_id").is(resolvedId));
-        DeleteResult deleteResult = mongoTemplate.remove(query, collection);
-        if (deleteResult.getDeletedCount() == 0 && resolvedId instanceof ObjectId) {
-            deleteResult = mongoTemplate.remove(Query.query(Criteria.where("_id").is(documentId)), collection);
+        Document existing = findDocumentByResolvedId(collection, resolvedId, documentId);
+        if (existing == null) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Document not found");
         }
+
+        DatabaseDependencyCheckResponse dependencyReport = buildDependencyReport(collection, existing);
+        if (dependencyReport.dependencyCount() > 0) {
+            throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "Cannot delete because this document is referenced by other data",
+                    Map.of(
+                            "code", "DEPENDENCY_FOUND",
+                            "dependencyCount", dependencyReport.dependencyCount(),
+                            "dependencyInfo", dependencyReport
+                    )
+            );
+        }
+
+        Query query = Query.query(Criteria.where("_id").is(existing.get("_id")));
+        DeleteResult deleteResult = mongoTemplate.remove(query, collection);
         if (deleteResult.getDeletedCount() == 0) {
             throw new ApiException(HttpStatus.NOT_FOUND, "Document not found");
         }
@@ -253,6 +287,188 @@ public class DatabaseConsoleService {
         String field = sortField == null || sortField.isBlank() ? "_id" : sortField.trim();
         Sort.Direction direction = "ASC".equalsIgnoreCase(sortDirection) ? Sort.Direction.ASC : Sort.Direction.DESC;
         query.with(Sort.by(direction, field));
+    }
+
+    private DatabaseDependencyCheckResponse buildDependencyReport(String targetCollection, Document targetDocument) {
+        String targetId = stringifyScalar(targetDocument.get("_id"));
+        String targetTitle = buildDocumentTitle(targetDocument, targetId);
+        Set<String> candidateValues = buildCandidateValues(targetDocument);
+        if (candidateValues.isEmpty() && targetId != null && !targetId.isBlank()) {
+            candidateValues = Set.of(targetId);
+        }
+
+        List<DatabaseDependencyReferenceResponse> dependencies = findDependencies(
+                targetCollection,
+                targetId,
+                candidateValues
+        );
+        return new DatabaseDependencyCheckResponse(
+                targetCollection,
+                targetId == null ? "" : targetId,
+                targetTitle,
+                dependencies.size(),
+                dependencies
+        );
+    }
+
+    private Set<String> buildCandidateValues(Document targetDocument) {
+        Set<String> candidates = new HashSet<>();
+        addCandidate(candidates, targetDocument.get("_id"));
+        for (Map.Entry<String, Object> entry : targetDocument.entrySet()) {
+            if (!REFERENCE_KEY_PATTERN.matcher(entry.getKey()).matches()) {
+                continue;
+            }
+            addCandidate(candidates, entry.getValue());
+        }
+        candidates.removeIf(value -> value == null || value.isBlank());
+        return candidates;
+    }
+
+    private void addCandidate(Set<String> candidates, Object value) {
+        if (!isScalarValue(value)) {
+            return;
+        }
+        String normalized = stringifyScalar(value);
+        if (normalized != null && !normalized.isBlank()) {
+            candidates.add(normalized);
+        }
+    }
+
+    private List<DatabaseDependencyReferenceResponse> findDependencies(
+            String targetCollection,
+            String targetDocumentId,
+            Set<String> candidateValues
+    ) {
+        if (candidateValues.isEmpty()) {
+            return List.of();
+        }
+
+        List<String> collections = new ArrayList<>(mongoTemplate.getCollectionNames());
+        collections.sort(String::compareToIgnoreCase);
+        List<DatabaseDependencyReferenceResponse> result = new ArrayList<>();
+
+        for (String collection : collections) {
+            List<Document> documents = mongoTemplate.findAll(Document.class, collection);
+            for (Document document : documents) {
+                String documentId = stringifyScalar(document.get("_id"));
+                if (Objects.equals(collection, targetCollection) && Objects.equals(documentId, targetDocumentId)) {
+                    continue;
+                }
+                List<DependencyMatch> matches = new ArrayList<>();
+                collectDependencyMatches("", document, candidateValues, matches);
+                if (matches.isEmpty()) {
+                    continue;
+                }
+                String title = buildDocumentTitle(document, documentId);
+                for (DependencyMatch match : matches) {
+                    result.add(new DatabaseDependencyReferenceResponse(
+                            collection,
+                            documentId == null ? "" : documentId,
+                            title,
+                            match.path(),
+                            stringifyValue(match.value())
+                    ));
+                }
+            }
+        }
+
+        result.sort(Comparator
+                .comparing(DatabaseDependencyReferenceResponse::collection, String::compareToIgnoreCase)
+                .thenComparing(DatabaseDependencyReferenceResponse::documentId)
+                .thenComparing(DatabaseDependencyReferenceResponse::fieldPath));
+        return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void collectDependencyMatches(
+            String prefix,
+            Object value,
+            Set<String> candidateValues,
+            List<DependencyMatch> matches
+    ) {
+        if (value == null) {
+            return;
+        }
+        if (value instanceof Document document) {
+            for (Map.Entry<String, Object> entry : document.entrySet()) {
+                String fieldPath = prefix.isBlank() ? entry.getKey() : prefix + "." + entry.getKey();
+                collectDependencyMatches(fieldPath, entry.getValue(), candidateValues, matches);
+            }
+            return;
+        }
+        if (value instanceof Map<?, ?> mapValue) {
+            for (Map.Entry<?, ?> entry : mapValue.entrySet()) {
+                String key = String.valueOf(entry.getKey());
+                String fieldPath = prefix.isBlank() ? key : prefix + "." + key;
+                collectDependencyMatches(fieldPath, entry.getValue(), candidateValues, matches);
+            }
+            return;
+        }
+        if (value instanceof List<?> listValue) {
+            for (int i = 0; i < listValue.size(); i++) {
+                Object item = listValue.get(i);
+                String fieldPath = prefix + "[" + i + "]";
+                collectDependencyMatches(fieldPath, item, candidateValues, matches);
+            }
+            return;
+        }
+        if (!isScalarValue(value)) {
+            return;
+        }
+        String normalized = stringifyScalar(value);
+        if (normalized == null || normalized.isBlank()) {
+            return;
+        }
+        if (candidateValues.contains(normalized)) {
+            matches.add(new DependencyMatch(prefix, value));
+        }
+    }
+
+    private boolean isScalarValue(Object value) {
+        return value instanceof String
+                || value instanceof Number
+                || value instanceof Boolean
+                || value instanceof ObjectId
+                || value instanceof Instant
+                || value instanceof Date
+                || value instanceof Decimal128;
+    }
+
+    private String stringifyScalar(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof ObjectId objectId) {
+            return objectId.toHexString();
+        }
+        if (value instanceof Instant instant) {
+            return instant.toString();
+        }
+        if (value instanceof Date date) {
+            return date.toInstant().toString();
+        }
+        if (value instanceof Decimal128 decimal128) {
+            return decimal128.bigDecimalValue().stripTrailingZeros().toPlainString();
+        }
+        return String.valueOf(value).trim();
+    }
+
+    private String buildDocumentTitle(Document document, String fallbackId) {
+        List<String> candidateKeys = List.of("name", "title", "email", "sku", "ingredientCode", "lotCode", "productId", "recipeId");
+        for (String key : candidateKeys) {
+            Object value = document.get(key);
+            if (value == null) {
+                continue;
+            }
+            String normalized = stringifyScalar(value);
+            if (normalized != null && !normalized.isBlank()) {
+                return key + ": " + normalized;
+            }
+        }
+        if (fallbackId == null || fallbackId.isBlank()) {
+            return "Document";
+        }
+        return "id: " + fallbackId;
     }
 
     @SuppressWarnings("unchecked")
@@ -595,6 +811,9 @@ public class DatabaseConsoleService {
             return cell;
         }
         return "\"" + cell.replace("\"", "\"\"") + "\"";
+    }
+
+    private record DependencyMatch(String path, Object value) {
     }
 
     private String safeCurrentUserEmail() {

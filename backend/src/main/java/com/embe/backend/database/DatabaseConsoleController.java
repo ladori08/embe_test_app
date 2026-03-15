@@ -61,6 +61,14 @@ public class DatabaseConsoleController {
         return databaseConsoleService.query(accessToken, request);
     }
 
+    @PostMapping("/dependencies/check")
+    public DatabaseDependencyCheckResponse checkDependencies(
+            @RequestHeader(name = ACCESS_TOKEN_HEADER) String accessToken,
+            @Valid @RequestBody DatabaseDependencyCheckRequest request
+    ) {
+        return databaseConsoleService.checkDependencies(accessToken, request.collection(), request.documentId());
+    }
+
     @PutMapping("/documents/{collection}/{id}")
     public DatabaseQueryRow updateDocument(
             @RequestHeader(name = ACCESS_TOKEN_HEADER) String accessToken,
