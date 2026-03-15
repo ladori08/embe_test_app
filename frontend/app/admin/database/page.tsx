@@ -17,6 +17,9 @@ import {
   BakeRecord,
   DatabaseBackupDetail,
   DatabaseBackupFileSummary,
+  DatabaseDependencyCheckResponse,
+  DatabaseDependencyReference,
+  DatabaseDependencyResolveOperation,
   DatabaseFilterCondition,
   DatabaseFilterOperator,
   DatabaseQueryRow,
@@ -47,6 +50,20 @@ type DisplayColumn = {
 
 type FieldOption = {
   value: string;
+  label: string;
+};
+
+type ResolveMode = 'KEEP' | 'REMOVE' | 'REPLACE';
+
+type ResolveRowState = {
+  key: string;
+  dependency: DatabaseDependencyReference;
+  mode: ResolveMode;
+  replacementDocumentId: string;
+};
+
+type ReplacementCandidate = {
+  id: string;
   label: string;
 };
 
@@ -187,6 +204,17 @@ function collectionDisplayName(collection: string, t: (key: string) => string): 
   }
 }
 
+function documentCandidateLabel(id: string, document: Record<string, unknown>): string {
+  const preferred = ['name', 'title', 'email', 'sku', 'ingredientCode', 'lotCode', 'productId', 'recipeId'];
+  for (const field of preferred) {
+    const value = asString(document[field]);
+    if (value) {
+      return `${value} (${shortId(id)})`;
+    }
+  }
+  return shortId(id);
+}
+
 export default function AdminDatabasePage() {
   const { t } = useI18n();
 
@@ -235,6 +263,17 @@ export default function AdminDatabasePage() {
   const [editText, setEditText] = useState('');
   const [editError, setEditError] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
+
+  const [dependencyWarningOpen, setDependencyWarningOpen] = useState(false);
+  const [dependencyResolveOpen, setDependencyResolveOpen] = useState(false);
+  const [dependencyLoading, setDependencyLoading] = useState(false);
+  const [dependencySaving, setDependencySaving] = useState(false);
+  const [pendingDeleteRow, setPendingDeleteRow] = useState<DatabaseQueryRow | null>(null);
+  const [dependencyReport, setDependencyReport] = useState<DatabaseDependencyCheckResponse | null>(null);
+  const [resolveRows, setResolveRows] = useState<ResolveRowState[]>([]);
+  const [replacementCandidates, setReplacementCandidates] = useState<ReplacementCandidate[]>([]);
+  const [replacementLoading, setReplacementLoading] = useState(false);
+  const [bulkReplacementDocumentId, setBulkReplacementDocumentId] = useState('');
 
   const isUnlocked = accessToken.length > 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -794,6 +833,71 @@ export default function AdminDatabasePage() {
     setEditOpen(true);
   };
 
+  const makeResolveRows = (report: DatabaseDependencyCheckResponse): ResolveRowState[] =>
+    report.dependencies.map((dependency, index) => ({
+      key: `${dependency.collection}-${dependency.documentId}-${dependency.fieldPath}-${index}`,
+      dependency,
+      mode: 'KEEP',
+      replacementDocumentId: ''
+    }));
+
+  const parseDependencyReportFromError = (err: unknown): DatabaseDependencyCheckResponse | null => {
+    if (!(err instanceof ApiError)) {
+      return null;
+    }
+    if (err.status !== 409 || typeof err.details !== 'object' || err.details == null) {
+      return null;
+    }
+    const detailObj = err.details as { dependencyInfo?: DatabaseDependencyCheckResponse };
+    if (!detailObj.dependencyInfo || !Array.isArray(detailObj.dependencyInfo.dependencies)) {
+      return null;
+    }
+    return detailObj.dependencyInfo;
+  };
+
+  const loadReplacementCandidates = async (collection: string, targetId: string) => {
+    setReplacementLoading(true);
+    try {
+      const response = await api.queryDatabase(accessToken, {
+        collection,
+        page: 1,
+        pageSize: 200,
+        sortField: '_id',
+        sortDirection: 'DESC'
+      });
+      const candidates = response.rows
+        .filter(row => row.id !== targetId)
+        .map(row => ({
+          id: row.id,
+          label: documentCandidateLabel(row.id, row.document)
+        }));
+      setReplacementCandidates(candidates);
+      setBulkReplacementDocumentId(candidates[0]?.id ?? '');
+      setResolveRows(current =>
+        current.map(item => ({
+          ...item,
+          replacementDocumentId: item.replacementDocumentId || candidates[0]?.id || ''
+        }))
+      );
+    } catch (err) {
+      setQueryError(err instanceof Error ? err.message : t('admin.database.queryFailed'));
+      setReplacementCandidates([]);
+      setBulkReplacementDocumentId('');
+    } finally {
+      setReplacementLoading(false);
+    }
+  };
+
+  const closeDependencyModals = () => {
+    setDependencyWarningOpen(false);
+    setDependencyResolveOpen(false);
+    setDependencyReport(null);
+    setResolveRows([]);
+    setReplacementCandidates([]);
+    setBulkReplacementDocumentId('');
+    setPendingDeleteRow(null);
+  };
+
   const saveEdit = async () => {
     if (!editingRow || !selectedCollection) return;
     let parsed: Record<string, unknown>;
@@ -817,13 +921,159 @@ export default function AdminDatabasePage() {
 
   const deleteRow = async (row: DatabaseQueryRow) => {
     if (!selectedCollection) return;
-    const confirmed = window.confirm(t('admin.database.deleteConfirm'));
-    if (!confirmed) return;
+    setDependencyLoading(true);
+    setPendingDeleteRow(row);
     try {
+      const dependencyInfo = await api.checkDatabaseDependencies(accessToken, selectedCollection, row.id);
+      if (dependencyInfo.dependencyCount > 0) {
+        setDependencyReport(dependencyInfo);
+        setResolveRows(makeResolveRows(dependencyInfo));
+        setDependencyWarningOpen(true);
+        return;
+      }
+
+      const confirmed = window.confirm(t('admin.database.deleteConfirm'));
+      if (!confirmed) {
+        setPendingDeleteRow(null);
+        return;
+      }
       await api.deleteDatabaseDocument(accessToken, selectedCollection, row.id);
+      setPendingDeleteRow(null);
       await runQuery();
     } catch (err) {
+      const dependencyInfo = parseDependencyReportFromError(err);
+      if (dependencyInfo) {
+        setDependencyReport(dependencyInfo);
+        setResolveRows(makeResolveRows(dependencyInfo));
+        setDependencyWarningOpen(true);
+        return;
+      }
       handleSessionError(err, t('admin.database.queryFailed'));
+    } finally {
+      setDependencyLoading(false);
+    }
+  };
+
+  const openDependencyResolveModal = async () => {
+    if (!dependencyReport) {
+      return;
+    }
+    setDependencyWarningOpen(false);
+    setDependencyResolveOpen(true);
+    setResolveRows(makeResolveRows(dependencyReport));
+    await loadReplacementCandidates(dependencyReport.targetCollection, dependencyReport.targetDocumentId);
+  };
+
+  const setResolveRowMode = (key: string, mode: ResolveMode) => {
+    setResolveRows(current =>
+      current.map(item =>
+        item.key === key
+          ? {
+              ...item,
+              mode
+            }
+          : item
+      )
+    );
+  };
+
+  const setResolveRowReplacement = (key: string, replacementDocumentId: string) => {
+    setResolveRows(current =>
+      current.map(item =>
+        item.key === key
+          ? {
+              ...item,
+              replacementDocumentId
+            }
+          : item
+      )
+    );
+  };
+
+  const applyBulkRemove = () => {
+    setResolveRows(current =>
+      current.map(item => ({
+        ...item,
+        mode: 'REMOVE'
+      }))
+    );
+  };
+
+  const applyBulkReplace = () => {
+    if (!bulkReplacementDocumentId) {
+      return;
+    }
+    setResolveRows(current =>
+      current.map(item => ({
+        ...item,
+        mode: 'REPLACE',
+        replacementDocumentId: bulkReplacementDocumentId
+      }))
+    );
+  };
+
+  const applyDependencyResolution = async () => {
+    if (!dependencyReport || !pendingDeleteRow) {
+      return;
+    }
+
+    const operations: DatabaseDependencyResolveOperation[] = resolveRows
+      .filter(item => item.mode !== 'KEEP')
+      .map(item => ({
+        collection: item.dependency.collection,
+        documentId: item.dependency.documentId,
+        fieldPath: item.dependency.fieldPath,
+        action: item.mode === 'REMOVE' ? 'REMOVE' : 'REPLACE',
+        replacementCollection: item.mode === 'REPLACE' ? dependencyReport.targetCollection : undefined,
+        replacementDocumentId: item.mode === 'REPLACE' ? item.replacementDocumentId : undefined
+      }));
+
+    if (operations.length === 0) {
+      setQueryError(t('admin.database.resolveNoChanges'));
+      return;
+    }
+
+    if (operations.some(item => item.action === 'REPLACE' && !item.replacementDocumentId)) {
+      setQueryError(t('admin.database.resolveMissingReplacement'));
+      return;
+    }
+
+    setDependencySaving(true);
+    try {
+      await api.resolveDatabaseDependencies(accessToken, {
+        targetCollection: dependencyReport.targetCollection,
+        targetDocumentId: dependencyReport.targetDocumentId,
+        operations
+      });
+
+      const afterResolve = await api.checkDatabaseDependencies(
+        accessToken,
+        dependencyReport.targetCollection,
+        dependencyReport.targetDocumentId
+      );
+
+      if (afterResolve.dependencyCount > 0) {
+        setDependencyReport(afterResolve);
+        setResolveRows(makeResolveRows(afterResolve));
+        setInfoMessage(t('admin.database.resolvePartial', { count: afterResolve.dependencyCount }));
+        return;
+      }
+
+      await api.deleteDatabaseDocument(accessToken, dependencyReport.targetCollection, dependencyReport.targetDocumentId);
+      setInfoMessage(t('admin.database.resolveAndDeleteSuccess'));
+      closeDependencyModals();
+      await runQuery();
+    } catch (err) {
+      const dependencyInfo = parseDependencyReportFromError(err);
+      if (dependencyInfo) {
+        setDependencyReport(dependencyInfo);
+        setResolveRows(makeResolveRows(dependencyInfo));
+        setInfoMessage(t('admin.database.resolvePartial', { count: dependencyInfo.dependencyCount }));
+        return;
+      }
+      handleSessionError(err, t('admin.database.queryFailed'));
+    } finally {
+      setDependencySaving(false);
     }
   };
 
@@ -1136,7 +1386,13 @@ export default function AdminDatabasePage() {
                                     <Button type="button" variant="outline" className="h-8 px-3 text-xs" onClick={() => openEdit(row)}>
                                       {t('common.edit')}
                                     </Button>
-                                    <Button type="button" variant="outline" className="h-8 px-3 text-xs" onClick={() => void deleteRow(row)}>
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      className="h-8 px-3 text-xs"
+                                      disabled={dependencyLoading}
+                                      onClick={() => void deleteRow(row)}
+                                    >
                                       {t('common.delete')}
                                     </Button>
                                   </div>
@@ -1187,6 +1443,156 @@ export default function AdminDatabasePage() {
               {t('common.save')}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={dependencyWarningOpen}
+        onOpenChange={nextOpen => {
+          if (!nextOpen) {
+            setDependencyWarningOpen(false);
+          }
+        }}
+      >
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{t('admin.database.dependencyWarningTitle')}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-ink">
+            {t('admin.database.dependencyWarningBody', { count: dependencyReport?.dependencyCount ?? 0 })}
+          </p>
+          <div className="mt-3 flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => closeDependencyModals()}>
+              {t('common.cancel')}
+            </Button>
+            <Button type="button" onClick={() => void openDependencyResolveModal()}>
+              {t('admin.database.dependencyEdit')}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={dependencyResolveOpen}
+        onOpenChange={nextOpen => {
+          if (!nextOpen) {
+            setDependencyResolveOpen(false);
+          }
+        }}
+      >
+        <DialogContent className="max-w-6xl">
+          <DialogHeader>
+            <DialogTitle>{t('admin.database.dependencyResolveTitle')}</DialogTitle>
+          </DialogHeader>
+          {dependencyReport ? (
+            <div className="space-y-3">
+              <p className="text-sm text-muted">
+                {t('admin.database.dependencyResolveHint', {
+                  target: dependencyReport.targetDocumentTitle,
+                  count: dependencyReport.dependencyCount
+                })}
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button type="button" variant="outline" className="h-8 px-3 text-xs" onClick={applyBulkRemove}>
+                  {t('admin.database.dependencyBulkRemove')}
+                </Button>
+                <Select value={bulkReplacementDocumentId} onChange={event => setBulkReplacementDocumentId(event.target.value)}>
+                  <option value="">{t('admin.database.dependencySelectReplacement')}</option>
+                  {replacementCandidates.map(candidate => (
+                    <option key={`bulk-replacement-${candidate.id}`} value={candidate.id}>
+                      {candidate.label}
+                    </option>
+                  ))}
+                </Select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-8 px-3 text-xs"
+                  disabled={!bulkReplacementDocumentId}
+                  onClick={applyBulkReplace}
+                >
+                  {t('admin.database.dependencyBulkReplace')}
+                </Button>
+              </div>
+              {replacementLoading ? <p className="text-xs text-muted">{t('admin.database.loadingRows')}</p> : null}
+              <div className="max-h-[52vh] overflow-auto">
+                <Table className="min-w-full">
+                  <TableHeader className="sticky top-0 z-20 bg-white">
+                    <TableRow>
+                      <TableHead className="bg-white">{t('admin.database.collection')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.database.dependencyDocument')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.database.dependencyField')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.database.dependencyCurrentValue')}</TableHead>
+                      <TableHead className="bg-white">{t('admin.database.actions')}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {resolveRows.map(item => (
+                      <TableRow key={item.key}>
+                        <TableCell className="align-top text-xs">{collectionDisplayName(item.dependency.collection, t)}</TableCell>
+                        <TableCell className="align-top text-xs">{item.dependency.documentTitle}</TableCell>
+                        <TableCell className="align-top text-xs">{item.dependency.fieldPath}</TableCell>
+                        <TableCell className="align-top text-xs">{item.dependency.valuePreview || '-'}</TableCell>
+                        <TableCell className="align-top">
+                          <div className="flex flex-col gap-2">
+                            <div className="flex flex-wrap gap-2">
+                              <Button
+                                type="button"
+                                variant={item.mode === 'REMOVE' ? 'default' : 'outline'}
+                                className="h-8 px-3 text-xs"
+                                onClick={() => setResolveRowMode(item.key, 'REMOVE')}
+                              >
+                                {t('common.delete')}
+                              </Button>
+                              <Button
+                                type="button"
+                                variant={item.mode === 'REPLACE' ? 'default' : 'outline'}
+                                className="h-8 px-3 text-xs"
+                                onClick={() => setResolveRowMode(item.key, 'REPLACE')}
+                              >
+                                {t('common.edit')}
+                              </Button>
+                              <Button
+                                type="button"
+                                variant={item.mode === 'KEEP' ? 'default' : 'outline'}
+                                className="h-8 px-3 text-xs"
+                                onClick={() => setResolveRowMode(item.key, 'KEEP')}
+                              >
+                                {t('admin.database.dependencySkip')}
+                              </Button>
+                            </div>
+                            {item.mode === 'REPLACE' ? (
+                              <Select
+                                value={item.replacementDocumentId}
+                                onChange={event => setResolveRowReplacement(item.key, event.target.value)}
+                              >
+                                <option value="">{t('admin.database.dependencySelectReplacement')}</option>
+                                {replacementCandidates.map(candidate => (
+                                  <option key={`${item.key}-${candidate.id}`} value={candidate.id}>
+                                    {candidate.label}
+                                  </option>
+                                ))}
+                              </Select>
+                            ) : null}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="mt-3 flex justify-end gap-2">
+                <Button type="button" variant="outline" onClick={() => closeDependencyModals()}>
+                  {t('common.cancel')}
+                </Button>
+                <Button type="button" onClick={() => void applyDependencyResolution()} disabled={dependencySaving}>
+                  {dependencySaving ? t('admin.database.resolving') : t('admin.database.dependencyApply')}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted">{t('admin.database.empty')}</p>
+          )}
         </DialogContent>
       </Dialog>
 

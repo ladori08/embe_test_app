@@ -8,6 +8,9 @@ import {
   DatabaseBackupResponse,
   DatabaseCollection,
   DatabaseCollectionFields,
+  DatabaseDependencyCheckResponse,
+  DatabaseDependencyResolveOperation,
+  DatabaseDependencyResolveResponse,
   DatabaseFilterCondition,
   DatabaseQueryResponse,
   DatabaseQueryRow,
@@ -217,6 +220,25 @@ export const api = {
     request<void>(`/api/admin/database/documents/${encodeURIComponent(collection)}/${encodeURIComponent(id)}`, {
       method: 'DELETE',
       headers: { 'X-Database-Access-Token': accessToken }
+    }),
+  checkDatabaseDependencies: (accessToken: string, collection: string, documentId: string) =>
+    request<DatabaseDependencyCheckResponse>('/api/admin/database/dependencies/check', {
+      method: 'POST',
+      headers: { 'X-Database-Access-Token': accessToken },
+      body: JSON.stringify({ collection, documentId })
+    }),
+  resolveDatabaseDependencies: (
+    accessToken: string,
+    payload: {
+      targetCollection: string;
+      targetDocumentId: string;
+      operations: DatabaseDependencyResolveOperation[];
+    }
+  ) =>
+    request<DatabaseDependencyResolveResponse>('/api/admin/database/dependencies/resolve', {
+      method: 'POST',
+      headers: { 'X-Database-Access-Token': accessToken },
+      body: JSON.stringify(payload)
     }),
   backupDatabase: (accessToken: string) =>
     request<DatabaseBackupResponse>('/api/admin/database/backup', {

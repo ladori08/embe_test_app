@@ -299,3 +299,38 @@ export interface DatabaseRestoreBackupResponse {
   documentsRestored: number;
   preRestoreBackupFile: string;
 }
+
+export interface DatabaseDependencyReference {
+  collection: string;
+  documentId: string;
+  documentTitle: string;
+  fieldPath: string;
+  valuePreview: string;
+}
+
+export interface DatabaseDependencyCheckResponse {
+  targetCollection: string;
+  targetDocumentId: string;
+  targetDocumentTitle: string;
+  dependencyCount: number;
+  dependencies: DatabaseDependencyReference[];
+}
+
+export type DatabaseDependencyResolveAction = 'REMOVE' | 'REPLACE';
+
+export interface DatabaseDependencyResolveOperation {
+  collection: string;
+  documentId: string;
+  fieldPath: string;
+  action: DatabaseDependencyResolveAction;
+  replacementCollection?: string;
+  replacementDocumentId?: string;
+  replacementValue?: string;
+}
+
+export interface DatabaseDependencyResolveResponse {
+  targetCollection: string;
+  targetDocumentId: string;
+  totalOperations: number;
+  appliedOperations: number;
+}

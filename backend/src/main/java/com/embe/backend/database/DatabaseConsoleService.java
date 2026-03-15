@@ -18,6 +18,7 @@ import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -36,6 +37,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Service
@@ -178,6 +180,42 @@ public class DatabaseConsoleService {
         }
 
         return buildDependencyReport(collection, targetDocument);
+    }
+
+    @Transactional
+    public DatabaseDependencyResolveResponse resolveDependencies(String accessToken, DatabaseDependencyResolveRequest request) {
+        validateAccess(accessToken);
+        String targetCollection = normalizeCollection(request.targetCollection());
+        ensureCollectionExists(targetCollection);
+        Object targetResolvedId = resolveDocumentId(request.targetDocumentId());
+        Document targetDocument = findDocumentByResolvedId(targetCollection, targetResolvedId, request.targetDocumentId());
+        if (targetDocument == null) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Target document not found");
+        }
+
+        int applied = 0;
+        for (DatabaseDependencyResolveOperationRequest operation : request.operations()) {
+            String collection = normalizeCollection(operation.collection());
+            ensureCollectionExists(collection);
+            Object resolvedId = resolveDocumentId(operation.documentId());
+            Document sourceDocument = findDocumentByResolvedId(collection, resolvedId, operation.documentId());
+            if (sourceDocument == null) {
+                throw new ApiException(HttpStatus.NOT_FOUND, "Document not found for resolve operation: " + operation.documentId());
+            }
+
+            boolean changed = applyResolveOperation(sourceDocument, operation);
+            if (changed) {
+                mongoTemplate.save(sourceDocument, collection);
+                applied++;
+            }
+        }
+
+        return new DatabaseDependencyResolveResponse(
+                targetCollection,
+                stringifyScalar(targetDocument.get("_id")),
+                request.operations().size(),
+                applied
+        );
     }
 
     public void deleteDocument(String accessToken, String collectionName, String documentId) {
@@ -422,6 +460,184 @@ public class DatabaseConsoleService {
         if (candidateValues.contains(normalized)) {
             matches.add(new DependencyMatch(prefix, value));
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private boolean applyResolveOperation(Document sourceDocument, DatabaseDependencyResolveOperationRequest operation) {
+        List<PathStep> steps = parseFieldPath(operation.fieldPath());
+        ResolvedPath resolvedPath = resolvePath(sourceDocument, steps);
+        if (resolvedPath == null) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "Field path not found for resolve operation",
+                    Map.of(
+                            "collection", operation.collection(),
+                            "documentId", operation.documentId(),
+                            "fieldPath", operation.fieldPath()
+                    )
+            );
+        }
+
+        if (operation.action() == DatabaseDependencyResolveAction.REMOVE) {
+            if (resolvedPath.listContext() != null
+                    && resolvedPath.terminal().kind() == PathStepKind.KEY
+                    && REFERENCE_KEY_PATTERN.matcher(resolvedPath.terminal().key()).matches()) {
+                List<Object> list = resolvedPath.listContext().list();
+                int index = resolvedPath.listContext().index();
+                if (index < 0 || index >= list.size()) {
+                    return false;
+                }
+                list.remove(index);
+                return true;
+            }
+
+            if (resolvedPath.parent() instanceof Map<?, ?> parentMap
+                    && resolvedPath.terminal().kind() == PathStepKind.KEY) {
+                String key = resolvedPath.terminal().key();
+                if (!((Map<String, Object>) parentMap).containsKey(key)) {
+                    return false;
+                }
+                ((Map<String, Object>) parentMap).remove(key);
+                return true;
+            }
+
+            if (resolvedPath.parent() instanceof List<?> parentList
+                    && resolvedPath.terminal().kind() == PathStepKind.INDEX) {
+                int index = resolvedPath.terminal().index();
+                if (index < 0 || index >= parentList.size()) {
+                    return false;
+                }
+                ((List<Object>) parentList).remove(index);
+                return true;
+            }
+
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Unsupported remove operation at path: " + operation.fieldPath());
+        }
+
+        Object replacement = resolveReplacementValue(operation, resolvedPath.currentValue());
+        if (Objects.equals(resolvedPath.currentValue(), replacement)) {
+            return false;
+        }
+
+        if (resolvedPath.parent() instanceof Map<?, ?> parentMap
+                && resolvedPath.terminal().kind() == PathStepKind.KEY) {
+            ((Map<String, Object>) parentMap).put(resolvedPath.terminal().key(), replacement);
+            return true;
+        }
+        if (resolvedPath.parent() instanceof List<?> parentList
+                && resolvedPath.terminal().kind() == PathStepKind.INDEX) {
+            int index = resolvedPath.terminal().index();
+            if (index < 0 || index >= parentList.size()) {
+                return false;
+            }
+            ((List<Object>) parentList).set(index, replacement);
+            return true;
+        }
+        throw new ApiException(HttpStatus.BAD_REQUEST, "Unsupported replace operation at path: " + operation.fieldPath());
+    }
+
+    private Object resolveReplacementValue(DatabaseDependencyResolveOperationRequest operation, Object currentValue) {
+        if (operation.action() != DatabaseDependencyResolveAction.REPLACE) {
+            return null;
+        }
+
+        if (operation.replacementValue() != null && !operation.replacementValue().isBlank()) {
+            return parseValue(operation.replacementValue());
+        }
+
+        if (operation.replacementDocumentId() == null || operation.replacementDocumentId().isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Replacement document id is required for REPLACE action");
+        }
+
+        String replacementCollection = operation.replacementCollection();
+        if (replacementCollection != null && !replacementCollection.isBlank()) {
+            String normalizedCollection = normalizeCollection(replacementCollection);
+            ensureCollectionExists(normalizedCollection);
+            Object replacementResolvedId = resolveDocumentId(operation.replacementDocumentId());
+            Document replacementDocument = findDocumentByResolvedId(
+                    normalizedCollection,
+                    replacementResolvedId,
+                    operation.replacementDocumentId()
+            );
+            if (replacementDocument == null) {
+                throw new ApiException(HttpStatus.NOT_FOUND, "Replacement document not found");
+            }
+        }
+
+        if (currentValue instanceof ObjectId) {
+            if (!ObjectId.isValid(operation.replacementDocumentId().trim())) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Replacement id must be ObjectId for current field type");
+            }
+            return new ObjectId(operation.replacementDocumentId().trim());
+        }
+
+        return operation.replacementDocumentId().trim();
+    }
+
+    private List<PathStep> parseFieldPath(String fieldPath) {
+        if (fieldPath == null || fieldPath.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Field path is required");
+        }
+        Matcher matcher = Pattern.compile("([^.\\[\\]]+)|\\[(\\d+)]").matcher(fieldPath.trim());
+        List<PathStep> steps = new ArrayList<>();
+        while (matcher.find()) {
+            String key = matcher.group(1);
+            String index = matcher.group(2);
+            if (key != null) {
+                steps.add(PathStep.key(key));
+            } else if (index != null) {
+                steps.add(PathStep.index(Integer.parseInt(index)));
+            }
+        }
+        if (steps.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Invalid field path: " + fieldPath);
+        }
+        return steps;
+    }
+
+    @SuppressWarnings("unchecked")
+    private ResolvedPath resolvePath(Document sourceDocument, List<PathStep> steps) {
+        Object current = sourceDocument;
+        Object parent = null;
+        ListContext listContext = null;
+
+        for (int i = 0; i < steps.size(); i++) {
+            PathStep step = steps.get(i);
+            boolean terminal = i == steps.size() - 1;
+
+            if (step.kind() == PathStepKind.KEY) {
+                if (!(current instanceof Map<?, ?> mapValue)) {
+                    return null;
+                }
+                if (terminal) {
+                    return new ResolvedPath(mapValue, step, ((Map<String, Object>) mapValue).get(step.key()), listContext);
+                }
+                parent = mapValue;
+                current = ((Map<String, Object>) mapValue).get(step.key());
+                if (current == null) {
+                    return null;
+                }
+                continue;
+            }
+
+            if (!(current instanceof List<?> listValue)) {
+                return null;
+            }
+            int index = step.index();
+            if (index < 0 || index >= listValue.size()) {
+                return null;
+            }
+            if (terminal) {
+                return new ResolvedPath(listValue, step, listValue.get(index), listContext);
+            }
+            parent = listValue;
+            listContext = new ListContext((List<Object>) listValue, index);
+            current = listValue.get(index);
+            if (current == null) {
+                return null;
+            }
+        }
+        return parent == null ? null : new ResolvedPath(parent, steps.getLast(), current, listContext);
     }
 
     private boolean isScalarValue(Object value) {
@@ -814,6 +1030,27 @@ public class DatabaseConsoleService {
     }
 
     private record DependencyMatch(String path, Object value) {
+    }
+
+    private record ResolvedPath(Object parent, PathStep terminal, Object currentValue, ListContext listContext) {
+    }
+
+    private record ListContext(List<Object> list, int index) {
+    }
+
+    private enum PathStepKind {
+        KEY,
+        INDEX
+    }
+
+    private record PathStep(PathStepKind kind, String key, int index) {
+        static PathStep key(String key) {
+            return new PathStep(PathStepKind.KEY, key, -1);
+        }
+
+        static PathStep index(int index) {
+            return new PathStep(PathStepKind.INDEX, null, index);
+        }
     }
 
     private String safeCurrentUserEmail() {
