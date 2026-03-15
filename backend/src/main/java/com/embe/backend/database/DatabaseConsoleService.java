@@ -1,5 +1,8 @@
 package com.embe.backend.database;
 
+import com.embe.backend.audit.AuditAction;
+import com.embe.backend.audit.AuditLogService;
+import com.embe.backend.audit.AuditModule;
 import com.embe.backend.auth.AuthService;
 import com.embe.backend.common.ApiException;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -48,25 +51,35 @@ public class DatabaseConsoleService {
     private static final int MAX_PAGE_SIZE = 500;
     private static final int MAX_EXPORT_ROWS = 20_000;
     private static final Pattern REFERENCE_KEY_PATTERN = Pattern.compile("(?i)(^_id$|^id$|.*id$|.*code$|.*sku$|.*email$)");
+    private static final Set<String> SOFT_REFERENCE_COLLECTIONS = Set.of(
+            "audit_logs",
+            "ingredient_stock_transactions",
+            "product_stock_logs",
+            "recipe_revisions",
+            "bake_records"
+    );
 
     private final MongoTemplate mongoTemplate;
     private final AuthService authService;
     private final ObjectMapper objectMapper;
     private final DatabaseConsoleSessionService sessionService;
     private final DatabaseBackupService backupService;
+    private final AuditLogService auditLogService;
 
     public DatabaseConsoleService(
             MongoTemplate mongoTemplate,
             AuthService authService,
             ObjectMapper objectMapper,
             DatabaseConsoleSessionService sessionService,
-            DatabaseBackupService backupService
+            DatabaseBackupService backupService,
+            AuditLogService auditLogService
     ) {
         this.mongoTemplate = mongoTemplate;
         this.authService = authService;
         this.objectMapper = objectMapper;
         this.sessionService = sessionService;
         this.backupService = backupService;
+        this.auditLogService = auditLogService;
     }
 
     public DatabaseUnlockResponse unlock(String password) {
@@ -186,7 +199,6 @@ public class DatabaseConsoleService {
     public DatabaseDependencyResolveResponse resolveDependencies(String accessToken, DatabaseDependencyResolveRequest request) {
         validateAccess(accessToken);
         String targetCollection = normalizeCollection(request.targetCollection());
-        ensureCollectionExists(targetCollection);
         Object targetResolvedId = resolveDocumentId(request.targetDocumentId());
         Document targetDocument = findDocumentByResolvedId(targetCollection, targetResolvedId, request.targetDocumentId());
         if (targetDocument == null) {
@@ -196,16 +208,18 @@ public class DatabaseConsoleService {
         int applied = 0;
         for (DatabaseDependencyResolveOperationRequest operation : request.operations()) {
             String collection = normalizeCollection(operation.collection());
-            ensureCollectionExists(collection);
             Object resolvedId = resolveDocumentId(operation.documentId());
             Document sourceDocument = findDocumentByResolvedId(collection, resolvedId, operation.documentId());
             if (sourceDocument == null) {
                 throw new ApiException(HttpStatus.NOT_FOUND, "Document not found for resolve operation: " + operation.documentId());
             }
 
+            Map<String, Object> beforeSnapshot = toSerializableDocument(sourceDocument);
             boolean changed = applyResolveOperation(sourceDocument, operation);
             if (changed) {
                 mongoTemplate.save(sourceDocument, collection);
+                Map<String, Object> afterSnapshot = toSerializableDocument(sourceDocument);
+                recordDependencyResolveAudit(collection, operation, beforeSnapshot, afterSnapshot, targetCollection, request.targetDocumentId());
                 applied++;
             }
         }
@@ -216,6 +230,93 @@ public class DatabaseConsoleService {
                 request.operations().size(),
                 applied
         );
+    }
+
+    private void recordDependencyResolveAudit(
+            String sourceCollection,
+            DatabaseDependencyResolveOperationRequest operation,
+            Map<String, Object> beforeSnapshot,
+            Map<String, Object> afterSnapshot,
+            String targetCollection,
+            String targetDocumentId
+    ) {
+        AuditModule module = toAuditModule(sourceCollection);
+        if (module == null) {
+            return;
+        }
+
+        String entityId = extractSnapshotId(beforeSnapshot, operation.documentId());
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("sourceCollection", sourceCollection);
+        metadata.put("fieldPath", operation.fieldPath());
+        metadata.put("resolveAction", operation.action() == null ? "" : operation.action().name());
+        metadata.put("targetCollection", targetCollection);
+        metadata.put("targetDocumentId", targetDocumentId);
+        if (operation.replacementDocumentId() != null && !operation.replacementDocumentId().isBlank()) {
+            metadata.put("replacementDocumentId", operation.replacementDocumentId());
+        }
+
+        auditLogService.record(
+                module,
+                AuditAction.UPDATE,
+                "Resolved dependency in " + sourceCollection + " (" + entityId + ")",
+                entityId,
+                beforeSnapshot,
+                afterSnapshot,
+                metadata
+        );
+    }
+
+    private void recordDatabaseDeleteAudit(String collection, Document deletedDocument) {
+        AuditModule module = toAuditModule(collection);
+        if (module == null || deletedDocument == null) {
+            return;
+        }
+
+        Map<String, Object> beforeSnapshot = toSerializableDocument(deletedDocument);
+        String entityId = extractSnapshotId(beforeSnapshot, stringifyScalar(deletedDocument.get("_id")));
+        Map<String, Object> metadata = Map.of("collection", collection);
+
+        auditLogService.record(
+                module,
+                AuditAction.DELETE,
+                "Deleted document from " + collection + " (" + entityId + ")",
+                entityId,
+                beforeSnapshot,
+                null,
+                metadata
+        );
+    }
+
+    private String extractSnapshotId(Map<String, Object> snapshot, String fallback) {
+        if (snapshot == null) {
+            return fallback == null ? "" : fallback;
+        }
+        Object rawId = snapshot.get("_id");
+        if (rawId == null) {
+            return fallback == null ? "" : fallback;
+        }
+        String value = String.valueOf(rawId).trim();
+        if (!value.isBlank()) {
+            return value;
+        }
+        return fallback == null ? "" : fallback;
+    }
+
+    private AuditModule toAuditModule(String collection) {
+        if (collection == null || collection.isBlank()) {
+            return null;
+        }
+        return switch (collection.trim()) {
+            case "ingredients", "ingredient_stock_transactions" -> AuditModule.INGREDIENT;
+            case "products", "product_lots", "product_stock_logs" -> AuditModule.PRODUCT;
+            case "product_categories" -> AuditModule.CATEGORY;
+            case "recipes", "recipe_revisions" -> AuditModule.RECIPE;
+            case "bake_records" -> AuditModule.PRODUCTION;
+            case "orders" -> AuditModule.ORDER;
+            case "users" -> AuditModule.USER;
+            default -> null;
+        };
     }
 
     public void deleteDocument(String accessToken, String collectionName, String documentId) {
@@ -247,6 +348,7 @@ public class DatabaseConsoleService {
         if (deleteResult.getDeletedCount() == 0) {
             throw new ApiException(HttpStatus.NOT_FOUND, "Document not found");
         }
+        recordDatabaseDeleteAudit(collection, existing);
     }
 
     @Transactional
@@ -310,6 +412,21 @@ public class DatabaseConsoleService {
     public DatabaseBackupResponse backup(String accessToken) {
         validateAccess(accessToken);
         return backupService.createBackup("MANUAL", safeCurrentUserEmail());
+    }
+
+    public DatabaseBackupDirectoryResponse getBackupDirectory(String accessToken) {
+        validateAccess(accessToken);
+        return backupService.getBackupDirectory();
+    }
+
+    public DatabaseOpenDirectoryResponse openBackupDirectory(String accessToken) {
+        validateAccess(accessToken);
+        return backupService.openBackupDirectory();
+    }
+
+    public DatabaseDeleteBackupResponse deleteBackup(String accessToken, String fileName, String confirmText) {
+        validateAccess(accessToken);
+        return backupService.deleteBackupFile(fileName, confirmText);
     }
 
     public List<DatabaseBackupFileSummaryResponse> listBackups(String accessToken) {
@@ -444,6 +561,9 @@ public class DatabaseConsoleService {
         List<DatabaseDependencyReferenceResponse> result = new ArrayList<>();
 
         for (String collection : collections) {
+            if (SOFT_REFERENCE_COLLECTIONS.contains(collection)) {
+                continue;
+            }
             List<Document> documents = mongoTemplate.findAll(Document.class, collection);
             for (Document document : documents) {
                 String documentId = stringifyScalar(document.get("_id"));
@@ -610,7 +730,6 @@ public class DatabaseConsoleService {
         String replacementCollection = operation.replacementCollection();
         if (replacementCollection != null && !replacementCollection.isBlank()) {
             String normalizedCollection = normalizeCollection(replacementCollection);
-            ensureCollectionExists(normalizedCollection);
             Object replacementResolvedId = resolveDocumentId(operation.replacementDocumentId());
             Document replacementDocument = findDocumentByResolvedId(
                     normalizedCollection,

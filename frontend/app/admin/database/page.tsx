@@ -53,7 +53,7 @@ type FieldOption = {
   label: string;
 };
 
-type ResolveMode = 'KEEP' | 'REMOVE' | 'REPLACE';
+type ResolveMode = 'REMOVE' | 'REPLACE';
 
 type ResolveRowState = {
   key: string;
@@ -215,6 +215,18 @@ function documentCandidateLabel(id: string, document: Record<string, unknown>): 
   return shortId(id);
 }
 
+function dependencyRowKey(collection: string, documentId: string): string {
+  return `${collection}::${documentId}`;
+}
+
+function normalizeDependencyFieldPath(fieldPath: string): string {
+  return fieldPath.replace(/\[(\d+)]/g, '.$1');
+}
+
+function toSingleLine(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
 export default function AdminDatabasePage() {
   const { t } = useI18n();
 
@@ -246,6 +258,8 @@ export default function AdminDatabasePage() {
   const [referenceData, setReferenceData] = useState<ReferenceData>(EMPTY_REFERENCE_DATA);
 
   const [infoMessage, setInfoMessage] = useState('');
+  const [successPopupOpen, setSuccessPopupOpen] = useState(false);
+  const [successPopupMessage, setSuccessPopupMessage] = useState('');
   const [backupRunning, setBackupRunning] = useState(false);
   const [restoringBackup, setRestoringBackup] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -257,9 +271,18 @@ export default function AdminDatabasePage() {
   const [backupDetailLoading, setBackupDetailLoading] = useState(false);
   const [backupDetail, setBackupDetail] = useState<DatabaseBackupDetail | null>(null);
   const [backupError, setBackupError] = useState('');
+  const [backupDirectoryPath, setBackupDirectoryPath] = useState('');
+  const [backupDirectoryOpen, setBackupDirectoryOpen] = useState(false);
+  const [backupDirectoryLoading, setBackupDirectoryLoading] = useState(false);
+  const [backupDirectoryOpening, setBackupDirectoryOpening] = useState(false);
+  const [deleteBackupOpen, setDeleteBackupOpen] = useState(false);
+  const [deleteBackupFileName, setDeleteBackupFileName] = useState('');
+  const [deleteBackupConfirmText, setDeleteBackupConfirmText] = useState('');
+  const [deletingBackup, setDeletingBackup] = useState(false);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<DatabaseQueryRow | null>(null);
+  const [editingCollection, setEditingCollection] = useState('');
   const [editText, setEditText] = useState('');
   const [editError, setEditError] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
@@ -274,6 +297,8 @@ export default function AdminDatabasePage() {
   const [replacementCandidates, setReplacementCandidates] = useState<ReplacementCandidate[]>([]);
   const [replacementLoading, setReplacementLoading] = useState(false);
   const [bulkReplacementDocumentId, setBulkReplacementDocumentId] = useState('');
+  const [dependencyRowsByKey, setDependencyRowsByKey] = useState<Record<string, DatabaseQueryRow>>({});
+  const [dependencyRowsLoading, setDependencyRowsLoading] = useState(false);
 
   const [wipeModalOpen, setWipeModalOpen] = useState(false);
   const [wipeScope, setWipeScope] = useState<'COLLECTION' | 'DATABASE'>('COLLECTION');
@@ -288,6 +313,7 @@ export default function AdminDatabasePage() {
   const canNext = page < totalPages;
   const wipeExpectedConfirmText =
     wipeScope === 'DATABASE' ? 'WIPE DATABASE' : `WIPE COLLECTION ${selectedCollection || '<collection>'}`;
+  const backupDeleteExpectedConfirm = deleteBackupFileName ? `DELETE BACKUP ${deleteBackupFileName}` : 'DELETE BACKUP <fileName>';
 
   const rawColumnNames = useMemo(() => {
     const fields = new Set<string>(['_id']);
@@ -417,9 +443,9 @@ export default function AdminDatabasePage() {
     return shortId(entityId);
   };
 
-  const friendlyColumns = useMemo<DisplayColumn[]>(() => {
+  const buildFriendlyColumnsForCollection = (collection: string, defaultFieldPool: string[]): DisplayColumn[] => {
     const buildDefaultColumns = () => {
-      const fields = fieldPool.filter(field => field !== '_class' && field !== 'passwordHash');
+      const fields = defaultFieldPool.filter(field => field !== '_class' && field !== 'passwordHash');
       if (!fields.includes('_id')) {
         fields.unshift('_id');
       }
@@ -431,7 +457,7 @@ export default function AdminDatabasePage() {
       }));
     };
 
-    switch (selectedCollection) {
+    switch (collection) {
       case 'ingredients':
         return [
           { id: 'ingredientCode', label: t('admin.ingredients.ingredientCode'), field: 'ingredientCode', getValue: doc => asString(doc.ingredientCode) || '-' },
@@ -622,7 +648,9 @@ export default function AdminDatabasePage() {
       default:
         return buildDefaultColumns();
     }
-  }, [selectedCollection, fieldPool, referenceData, t]);
+  };
+
+  const friendlyColumns = buildFriendlyColumnsForCollection(selectedCollection, fieldPool);
 
   const rawColumns = useMemo<DisplayColumn[]>(() => {
     return rawColumnNames.map(field => ({
@@ -663,6 +691,12 @@ export default function AdminDatabasePage() {
       return;
     }
     setQueryError(message);
+  };
+
+  const showSuccessPopup = (message: string) => {
+    setInfoMessage(message);
+    setSuccessPopupMessage(message);
+    setSuccessPopupOpen(true);
   };
 
   const loadReferenceData = async () => {
@@ -835,18 +869,65 @@ export default function AdminDatabasePage() {
     }
   };
 
-  const openEdit = (row: DatabaseQueryRow) => {
+  const openEdit = (row: DatabaseQueryRow, collection = selectedCollection) => {
     setEditingRow(row);
+    setEditingCollection(collection);
     setEditText(JSON.stringify(row.document, null, 2));
     setEditError('');
     setEditOpen(true);
+  };
+
+  const getDependencyRowId = (dependency: DatabaseDependencyReference): string =>
+    dependencyRowKey(dependency.collection, dependency.documentId);
+
+  const findDocumentByCollectionAndId = async (collection: string, id: string): Promise<DatabaseQueryRow | null> => {
+    const response = await api.queryDatabase(accessToken, {
+      collection,
+      filters: [{ field: '_id', operator: 'EQ', value: id }],
+      page: 1,
+      pageSize: 1,
+      sortField: '_id',
+      sortDirection: 'DESC'
+    });
+    return response.rows[0] ?? null;
+  };
+
+  const loadDependencyRows = async (report: DatabaseDependencyCheckResponse) => {
+    setDependencyRowsLoading(true);
+    try {
+      const uniqueDependencies = new Map<string, DatabaseDependencyReference>();
+      report.dependencies.forEach(dependency => {
+        uniqueDependencies.set(getDependencyRowId(dependency), dependency);
+      });
+
+      const fetched = await Promise.all(
+        Array.from(uniqueDependencies.values()).map(async dependency => {
+          try {
+            const row = await findDocumentByCollectionAndId(dependency.collection, dependency.documentId);
+            return { key: getDependencyRowId(dependency), row };
+          } catch {
+            return { key: getDependencyRowId(dependency), row: null };
+          }
+        })
+      );
+
+      const nextMap: Record<string, DatabaseQueryRow> = {};
+      fetched.forEach(item => {
+        if (item.row) {
+          nextMap[item.key] = item.row;
+        }
+      });
+      setDependencyRowsByKey(nextMap);
+    } finally {
+      setDependencyRowsLoading(false);
+    }
   };
 
   const makeResolveRows = (report: DatabaseDependencyCheckResponse): ResolveRowState[] =>
     report.dependencies.map((dependency, index) => ({
       key: `${dependency.collection}-${dependency.documentId}-${dependency.fieldPath}-${index}`,
       dependency,
-      mode: 'KEEP',
+      mode: 'REMOVE',
       replacementDocumentId: ''
     }));
 
@@ -904,11 +985,13 @@ export default function AdminDatabasePage() {
     setResolveRows([]);
     setReplacementCandidates([]);
     setBulkReplacementDocumentId('');
+    setDependencyRowsByKey({});
     setPendingDeleteRow(null);
   };
 
   const saveEdit = async () => {
-    if (!editingRow || !selectedCollection) return;
+    const targetCollection = editingCollection || selectedCollection;
+    if (!editingRow || !targetCollection) return;
     let parsed: Record<string, unknown>;
     try {
       parsed = JSON.parse(editText) as Record<string, unknown>;
@@ -918,9 +1001,22 @@ export default function AdminDatabasePage() {
     }
     setSavingEdit(true);
     try {
-      await api.updateDatabaseDocument(accessToken, selectedCollection, editingRow.id, parsed);
+      await api.updateDatabaseDocument(accessToken, targetCollection, editingRow.id, parsed);
       setEditOpen(false);
-      await runQuery();
+      if (targetCollection === selectedCollection) {
+        await runQuery();
+      }
+
+      if (dependencyResolveOpen && dependencyReport) {
+        const refreshedReport = await api.checkDatabaseDependencies(
+          accessToken,
+          dependencyReport.targetCollection,
+          dependencyReport.targetDocumentId
+        );
+        setDependencyReport(refreshedReport);
+        setResolveRows(makeResolveRows(refreshedReport));
+        await loadDependencyRows(refreshedReport);
+      }
     } catch (err) {
       setEditError(err instanceof Error ? err.message : t('admin.database.queryFailed'));
     } finally {
@@ -949,6 +1045,7 @@ export default function AdminDatabasePage() {
       await api.deleteDatabaseDocument(accessToken, selectedCollection, row.id);
       setPendingDeleteRow(null);
       await runQuery();
+      showSuccessPopup(t('admin.database.deleteSuccess'));
     } catch (err) {
       const dependencyInfo = parseDependencyReportFromError(err);
       if (dependencyInfo) {
@@ -970,7 +1067,10 @@ export default function AdminDatabasePage() {
     setDependencyWarningOpen(false);
     setDependencyResolveOpen(true);
     setResolveRows(makeResolveRows(dependencyReport));
-    await loadReplacementCandidates(dependencyReport.targetCollection, dependencyReport.targetDocumentId);
+    await Promise.all([
+      loadReplacementCandidates(dependencyReport.targetCollection, dependencyReport.targetDocumentId),
+      loadDependencyRows(dependencyReport)
+    ]);
   };
 
   const setResolveRowMode = (key: string, mode: ResolveMode) => {
@@ -1026,9 +1126,7 @@ export default function AdminDatabasePage() {
       return;
     }
 
-    const operations: DatabaseDependencyResolveOperation[] = resolveRows
-      .filter(item => item.mode !== 'KEEP')
-      .map(item => ({
+    const operations: DatabaseDependencyResolveOperation[] = resolveRows.map(item => ({
         collection: item.dependency.collection,
         documentId: item.dependency.documentId,
         fieldPath: item.dependency.fieldPath,
@@ -1036,11 +1134,6 @@ export default function AdminDatabasePage() {
         replacementCollection: item.mode === 'REPLACE' ? dependencyReport.targetCollection : undefined,
         replacementDocumentId: item.mode === 'REPLACE' ? item.replacementDocumentId : undefined
       }));
-
-    if (operations.length === 0) {
-      setQueryError(t('admin.database.resolveNoChanges'));
-      return;
-    }
 
     if (operations.some(item => item.action === 'REPLACE' && !item.replacementDocumentId)) {
       setQueryError(t('admin.database.resolveMissingReplacement'));
@@ -1064,12 +1157,13 @@ export default function AdminDatabasePage() {
       if (afterResolve.dependencyCount > 0) {
         setDependencyReport(afterResolve);
         setResolveRows(makeResolveRows(afterResolve));
+        await loadDependencyRows(afterResolve);
         setInfoMessage(t('admin.database.resolvePartial', { count: afterResolve.dependencyCount }));
         return;
       }
 
       await api.deleteDatabaseDocument(accessToken, dependencyReport.targetCollection, dependencyReport.targetDocumentId);
-      setInfoMessage(t('admin.database.resolveAndDeleteSuccess'));
+      showSuccessPopup(t('admin.database.resolveAndDeleteSuccess'));
       closeDependencyModals();
       await runQuery();
     } catch (err) {
@@ -1077,6 +1171,7 @@ export default function AdminDatabasePage() {
       if (dependencyInfo) {
         setDependencyReport(dependencyInfo);
         setResolveRows(makeResolveRows(dependencyInfo));
+        await loadDependencyRows(dependencyInfo);
         setInfoMessage(t('admin.database.resolvePartial', { count: dependencyInfo.dependencyCount }));
         return;
       }
@@ -1152,6 +1247,51 @@ export default function AdminDatabasePage() {
     }
   };
 
+  const loadBackupDirectory = async () => {
+    setBackupDirectoryLoading(true);
+    try {
+      const result = await api.getDatabaseBackupDirectory(accessToken);
+      setBackupDirectoryPath(result.directoryPath);
+      setBackupError('');
+    } catch (err) {
+      setBackupDirectoryPath('');
+      setBackupError(err instanceof Error ? err.message : t('admin.database.queryFailed'));
+    } finally {
+      setBackupDirectoryLoading(false);
+    }
+  };
+
+  const openBackupDirectoryModal = async () => {
+    setBackupDirectoryOpen(true);
+    if (!backupDirectoryPath) {
+      await loadBackupDirectory();
+    }
+  };
+
+  const copyBackupDirectoryPath = async () => {
+    if (!backupDirectoryPath) return;
+    try {
+      await navigator.clipboard.writeText(backupDirectoryPath);
+      setInfoMessage(t('admin.database.backupPathCopied'));
+    } catch (err) {
+      setQueryError(err instanceof Error ? err.message : t('admin.database.queryFailed'));
+    }
+  };
+
+  const openBackupFolderOnHost = async () => {
+    setBackupDirectoryOpening(true);
+    try {
+      const response = await api.openDatabaseBackupDirectory(accessToken);
+      if (response.message) {
+        setInfoMessage(response.message);
+      }
+    } catch (err) {
+      setQueryError(err instanceof Error ? err.message : t('admin.database.queryFailed'));
+    } finally {
+      setBackupDirectoryOpening(false);
+    }
+  };
+
   const loadBackupList = async () => {
     setBackupListLoading(true);
     setBackupError('');
@@ -1168,6 +1308,29 @@ export default function AdminDatabasePage() {
   const openBackupList = async () => {
     setBackupListOpen(true);
     await loadBackupList();
+  };
+
+  const requestDeleteBackup = (fileName: string) => {
+    setDeleteBackupFileName(fileName);
+    setDeleteBackupConfirmText('');
+    setDeleteBackupOpen(true);
+  };
+
+  const deleteBackupFile = async () => {
+    if (!deleteBackupFileName) return;
+    setDeletingBackup(true);
+    try {
+      const deleted = await api.deleteDatabaseBackup(accessToken, deleteBackupFileName, deleteBackupConfirmText);
+      setInfoMessage(t('admin.database.backupDeleteSuccess', { file: deleted.fileName }));
+      setDeleteBackupOpen(false);
+      setDeleteBackupFileName('');
+      setDeleteBackupConfirmText('');
+      await loadBackupList();
+    } catch (err) {
+      setBackupError(err instanceof Error ? err.message : t('admin.database.queryFailed'));
+    } finally {
+      setDeletingBackup(false);
+    }
   };
 
   const openBackupDetail = async (fileName: string) => {
@@ -1251,6 +1414,35 @@ export default function AdminDatabasePage() {
     }
   };
 
+  const editingFriendlyColumns = editingCollection
+    ? buildFriendlyColumnsForCollection(editingCollection, editingRow ? Object.keys(editingRow.document || {}) : [])
+    : [];
+
+  const renderDependencySummary = (item: ResolveRowState) => {
+    const row = dependencyRowsByKey[getDependencyRowId(item.dependency)];
+    if (!row) {
+      return (
+        <div className="space-y-1 text-xs text-muted">
+          <p>{item.dependency.documentTitle}</p>
+          <p>{t('admin.database.loadingRows')}</p>
+        </div>
+      );
+    }
+    const columns = buildFriendlyColumnsForCollection(item.dependency.collection, Object.keys(row.document || {})).slice(0, 4);
+    if (columns.length === 0) {
+      return <p className="text-xs text-muted">{item.dependency.documentTitle}</p>;
+    }
+    return (
+      <div className="space-y-1 text-xs">
+        {columns.map(column => (
+          <p key={`${item.key}-${column.id}`} className="whitespace-pre-wrap break-words">
+            <span className="font-semibold">{column.label}:</span> {toSingleLine(column.getValue(row.document)) || '-'}
+          </p>
+        ))}
+      </div>
+    );
+  };
+
   return (
     <>
       <TopNav />
@@ -1306,6 +1498,9 @@ export default function AdminDatabasePage() {
                     </Button>
                     <Button type="button" variant="outline" onClick={() => openWipeModal('DATABASE')} disabled={wiping}>
                       {t('admin.database.wipeDatabase')}
+                    </Button>
+                    <Button type="button" variant="outline" onClick={() => void openBackupDirectoryModal()}>
+                      {t('admin.database.backupPath')}
                     </Button>
                     <Button type="button" variant="outline" onClick={() => void openBackupList()} disabled={backupListLoading}>
                       {t('admin.database.backupList')}
@@ -1495,11 +1690,46 @@ export default function AdminDatabasePage() {
         </AdminShell>
       </RequireRole>
 
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+      <Dialog
+        open={editOpen}
+        onOpenChange={nextOpen => {
+          setEditOpen(nextOpen);
+          if (!nextOpen) {
+            setEditError('');
+            setEditingRow(null);
+            setEditingCollection('');
+          }
+        }}
+      >
         <DialogContent className="max-w-4xl">
           <DialogHeader>
-            <DialogTitle>{t('admin.database.editTitle')}</DialogTitle>
+            <DialogTitle>
+              {t('admin.database.editTitle')}
+              {editingCollection ? ` • ${collectionDisplayName(editingCollection, t)}` : ''}
+            </DialogTitle>
           </DialogHeader>
+          {editingRow && editingFriendlyColumns.length > 0 ? (
+            <div className="max-h-[36vh] overflow-auto rounded-xl border border-border">
+              <Table className="min-w-full">
+                <TableHeader className="sticky top-0 z-20 bg-white">
+                  <TableRow>
+                    <TableHead className="w-[220px] bg-white">{t('admin.database.dependencyField')}</TableHead>
+                    <TableHead className="bg-white">{t('admin.database.dependencyCurrentValue')}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {editingFriendlyColumns.map(column => (
+                    <TableRow key={`edit-friendly-${column.id}`}>
+                      <TableCell className="align-top text-xs font-semibold">{column.label}</TableCell>
+                      <TableCell className="align-top text-xs">
+                        <div className="whitespace-pre-wrap break-words">{column.getValue(editingRow.document)}</div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          ) : null}
           <textarea
             className="min-h-[360px] w-full rounded-xl border border-border p-3 font-mono text-xs outline-none focus:border-accent"
             value={editText}
@@ -1585,7 +1815,7 @@ export default function AdminDatabasePage() {
                   {t('admin.database.dependencyBulkReplace')}
                 </Button>
               </div>
-              {replacementLoading ? <p className="text-xs text-muted">{t('admin.database.loadingRows')}</p> : null}
+              {replacementLoading || dependencyRowsLoading ? <p className="text-xs text-muted">{t('admin.database.loadingRows')}</p> : null}
               <div className="max-h-[52vh] overflow-auto">
                 <Table className="min-w-full">
                   <TableHeader className="sticky top-0 z-20 bg-white">
@@ -1593,7 +1823,6 @@ export default function AdminDatabasePage() {
                       <TableHead className="bg-white">{t('admin.database.collection')}</TableHead>
                       <TableHead className="bg-white">{t('admin.database.dependencyDocument')}</TableHead>
                       <TableHead className="bg-white">{t('admin.database.dependencyField')}</TableHead>
-                      <TableHead className="bg-white">{t('admin.database.dependencyCurrentValue')}</TableHead>
                       <TableHead className="bg-white">{t('admin.database.actions')}</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1601,9 +1830,15 @@ export default function AdminDatabasePage() {
                     {resolveRows.map(item => (
                       <TableRow key={item.key}>
                         <TableCell className="align-top text-xs">{collectionDisplayName(item.dependency.collection, t)}</TableCell>
-                        <TableCell className="align-top text-xs">{item.dependency.documentTitle}</TableCell>
-                        <TableCell className="align-top text-xs">{item.dependency.fieldPath}</TableCell>
-                        <TableCell className="align-top text-xs">{item.dependency.valuePreview || '-'}</TableCell>
+                        <TableCell className="align-top">{renderDependencySummary(item)}</TableCell>
+                        <TableCell className="align-top text-xs">
+                          <div className="space-y-1">
+                            <p>
+                              <span className="font-semibold">{prettifyFieldName(normalizeDependencyFieldPath(item.dependency.fieldPath))}</span>
+                            </p>
+                            <p className="text-muted">{item.dependency.valuePreview || '-'}</p>
+                          </div>
+                        </TableCell>
                         <TableCell className="align-top">
                           <div className="flex flex-col gap-2">
                             <div className="flex flex-wrap gap-2">
@@ -1622,14 +1857,6 @@ export default function AdminDatabasePage() {
                                 onClick={() => setResolveRowMode(item.key, 'REPLACE')}
                               >
                                 {t('common.edit')}
-                              </Button>
-                              <Button
-                                type="button"
-                                variant={item.mode === 'KEEP' ? 'default' : 'outline'}
-                                className="h-8 px-3 text-xs"
-                                onClick={() => setResolveRowMode(item.key, 'KEEP')}
-                              >
-                                {t('admin.database.dependencySkip')}
                               </Button>
                             </div>
                             {item.mode === 'REPLACE' ? (
@@ -1664,6 +1891,20 @@ export default function AdminDatabasePage() {
           ) : (
             <p className="text-sm text-muted">{t('admin.database.empty')}</p>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={successPopupOpen} onOpenChange={setSuccessPopupOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{t('admin.database.successTitle')}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-ink">{successPopupMessage || t('admin.database.queryFailed')}</p>
+          <div className="mt-3 flex justify-end">
+            <Button type="button" variant="outline" onClick={() => setSuccessPopupOpen(false)}>
+              {t('common.confirm')}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -1710,6 +1951,65 @@ export default function AdminDatabasePage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={backupDirectoryOpen} onOpenChange={setBackupDirectoryOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{t('admin.database.backupPathTitle')}</DialogTitle>
+          </DialogHeader>
+          {backupDirectoryLoading ? (
+            <p className="text-sm text-muted">{t('admin.database.loadingRows')}</p>
+          ) : (
+            <div className="space-y-3">
+              <p className="rounded-lg border border-border bg-[#f8f1e8] p-3 font-mono text-xs">
+                {backupDirectoryPath || t('admin.database.queryFailed')}
+              </p>
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button type="button" variant="outline" onClick={() => void copyBackupDirectoryPath()} disabled={!backupDirectoryPath}>
+                  {t('admin.database.backupPathCopy')}
+                </Button>
+                <Button type="button" variant="outline" onClick={() => void openBackupFolderOnHost()} disabled={backupDirectoryOpening}>
+                  {backupDirectoryOpening ? t('admin.database.backupPathOpening') : t('admin.database.backupPathOpen')}
+                </Button>
+              </div>
+            </div>
+          )}
+          <div className="mt-3 flex justify-end">
+            <Button type="button" variant="outline" onClick={() => setBackupDirectoryOpen(false)}>
+              {t('common.close')}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteBackupOpen} onOpenChange={setDeleteBackupOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{t('admin.database.backupDeleteTitle')}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <p className="text-red-600">{t('admin.database.backupDeleteWarning', { file: deleteBackupFileName || '-' })}</p>
+            <p className="text-muted">{t('admin.database.backupDeleteConfirmHint', { text: backupDeleteExpectedConfirm })}</p>
+            <Input value={deleteBackupConfirmText} onChange={event => setDeleteBackupConfirmText(event.target.value)} placeholder={backupDeleteExpectedConfirm} />
+          </div>
+          <div className="mt-3 flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setDeleteBackupOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              type="button"
+              disabled={
+                deletingBackup ||
+                !deleteBackupFileName ||
+                deleteBackupConfirmText.trim().toUpperCase() !== backupDeleteExpectedConfirm.toUpperCase()
+              }
+              onClick={() => void deleteBackupFile()}
+            >
+              {deletingBackup ? t('admin.database.backupDeleting') : t('admin.database.backupDeleteButton')}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={backupListOpen} onOpenChange={setBackupListOpen}>
         <DialogContent className="max-w-5xl">
           <DialogHeader>
@@ -1750,6 +2050,14 @@ export default function AdminDatabasePage() {
                             onClick={() => void restoreBackup(item.fileName)}
                           >
                             {restoringBackup ? t('admin.database.backupRestoreRunning') : t('admin.database.backupRestore')}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="h-8 px-3 text-xs"
+                            onClick={() => requestDeleteBackup(item.fileName)}
+                          >
+                            {t('common.delete')}
                           </Button>
                         </div>
                       </TableCell>

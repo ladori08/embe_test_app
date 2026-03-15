@@ -12,6 +12,7 @@ import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.awt.Desktop;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -89,6 +90,94 @@ public class DatabaseBackupService {
                     .toList();
         } catch (IOException ex) {
             throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to list backup files");
+        }
+    }
+
+    public DatabaseBackupDirectoryResponse getBackupDirectory() {
+        Path directory = backupDirectory();
+        try {
+            Files.createDirectories(directory);
+        } catch (IOException ex) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to access backup directory");
+        }
+        return new DatabaseBackupDirectoryResponse(directory.toString());
+    }
+
+    public DatabaseOpenDirectoryResponse openBackupDirectory() {
+        Path directory = backupDirectory();
+        try {
+            Files.createDirectories(directory);
+        } catch (IOException ex) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to access backup directory");
+        }
+
+        if (isAndroidRuntime()) {
+            throw new ApiException(
+                    HttpStatus.NOT_IMPLEMENTED,
+                    "Open backup folder is not supported on Android runtime",
+                    Map.of("code", "OPEN_BACKUP_DIR_UNSUPPORTED", "platform", "ANDROID")
+            );
+        }
+
+        try {
+            if (Desktop.isDesktopSupported()) {
+                Desktop desktop = Desktop.getDesktop();
+                if (desktop.isSupported(Desktop.Action.OPEN)) {
+                    desktop.open(directory.toFile());
+                    return new DatabaseOpenDirectoryResponse(true, "Opened backup directory");
+                }
+            }
+        } catch (Exception ignored) {
+            // fallback below
+        }
+
+        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        try {
+            Process process;
+            if (os.contains("win")) {
+                process = new ProcessBuilder("explorer", directory.toString()).start();
+            } else if (os.contains("mac")) {
+                process = new ProcessBuilder("open", directory.toString()).start();
+            } else if (os.contains("nix") || os.contains("nux") || os.contains("aix")) {
+                process = new ProcessBuilder("xdg-open", directory.toString()).start();
+            } else {
+                throw new ApiException(
+                        HttpStatus.NOT_IMPLEMENTED,
+                        "Open backup folder is not supported on this OS",
+                        Map.of("code", "OPEN_BACKUP_DIR_UNSUPPORTED", "platform", os)
+                );
+            }
+            if (process == null) {
+                throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to open backup directory");
+            }
+            return new DatabaseOpenDirectoryResponse(true, "Opened backup directory");
+        } catch (ApiException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new ApiException(
+                    HttpStatus.NOT_IMPLEMENTED,
+                    "Open backup folder is unavailable in current runtime",
+                    Map.of("code", "OPEN_BACKUP_DIR_UNAVAILABLE", "reason", ex.getMessage())
+            );
+        }
+    }
+
+    public DatabaseDeleteBackupResponse deleteBackupFile(String fileName, String confirmText) {
+        Path filePath = resolveBackupFilePath(fileName);
+        String expectedConfirm = "DELETE BACKUP " + filePath.getFileName();
+        String providedConfirm = confirmText == null ? "" : confirmText.trim();
+        if (!expectedConfirm.equalsIgnoreCase(providedConfirm)) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "Invalid backup delete confirmation text",
+                    Map.of("code", "INVALID_DELETE_BACKUP_CONFIRM", "expected", expectedConfirm)
+            );
+        }
+        try {
+            Files.delete(filePath);
+            return new DatabaseDeleteBackupResponse(filePath.getFileName().toString(), Instant.now());
+        } catch (IOException ex) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to delete backup file");
         }
     }
 
@@ -192,6 +281,12 @@ public class DatabaseBackupService {
 
     private Path backupDirectory() {
         return Paths.get(backupDir).toAbsolutePath().normalize();
+    }
+
+    private boolean isAndroidRuntime() {
+        String vmName = System.getProperty("java.vm.name", "").toLowerCase(Locale.ROOT);
+        String runtimeName = System.getProperty("java.runtime.name", "").toLowerCase(Locale.ROOT);
+        return vmName.contains("dalvik") || runtimeName.contains("android");
     }
 
     private Path resolveBackupFilePath(String fileName) {

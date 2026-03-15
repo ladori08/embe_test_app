@@ -292,6 +292,20 @@ export interface DatabaseBackupDetail {
   collections: DatabaseBackupCollectionSummary[];
 }
 
+export interface DatabaseBackupDirectory {
+  directoryPath: string;
+}
+
+export interface DatabaseOpenDirectoryResponse {
+  opened: boolean;
+  message: string;
+}
+
+export interface DatabaseDeleteBackupResponse {
+  fileName: string;
+  deletedAt: string;
+}
+
 export interface DatabaseRestoreBackupResponse {
   restoredFromFile: string;
   restoredAt: string;

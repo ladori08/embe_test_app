@@ -4,14 +4,17 @@ import {
   AuditLogListItem,
   BakeRecord,
   DatabaseBackupDetail,
+  DatabaseBackupDirectory,
   DatabaseBackupFileSummary,
   DatabaseBackupResponse,
   DatabaseCollection,
   DatabaseCollectionFields,
+  DatabaseDeleteBackupResponse,
   DatabaseDependencyCheckResponse,
   DatabaseDependencyResolveOperation,
   DatabaseDependencyResolveResponse,
   DatabaseFilterCondition,
+  DatabaseOpenDirectoryResponse,
   DatabaseQueryResponse,
   DatabaseQueryRow,
   DatabaseRestoreBackupResponse,
@@ -259,9 +262,24 @@ export const api = {
       method: 'POST',
       headers: { 'X-Database-Access-Token': accessToken }
     }),
+  getDatabaseBackupDirectory: (accessToken: string) =>
+    request<DatabaseBackupDirectory>('/api/admin/database/backup-directory', {
+      headers: { 'X-Database-Access-Token': accessToken }
+    }),
+  openDatabaseBackupDirectory: (accessToken: string) =>
+    request<DatabaseOpenDirectoryResponse>('/api/admin/database/backup-directory/open', {
+      method: 'POST',
+      headers: { 'X-Database-Access-Token': accessToken }
+    }),
   listDatabaseBackups: (accessToken: string) =>
     request<DatabaseBackupFileSummary[]>('/api/admin/database/backups', {
       headers: { 'X-Database-Access-Token': accessToken }
+    }),
+  deleteDatabaseBackup: (accessToken: string, fileName: string, confirmText: string) =>
+    request<DatabaseDeleteBackupResponse>('/api/admin/database/backups/delete', {
+      method: 'POST',
+      headers: { 'X-Database-Access-Token': accessToken },
+      body: JSON.stringify({ fileName, confirmText })
     }),
   getDatabaseBackupDetail: (accessToken: string, fileName: string) =>
     request<DatabaseBackupDetail>(`/api/admin/database/backups/${encodeURIComponent(fileName)}`, {
