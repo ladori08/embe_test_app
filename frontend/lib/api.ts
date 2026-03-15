@@ -4,15 +4,22 @@ import {
   AuditLogListItem,
   BakeRecord,
   DatabaseBackupDetail,
+  DatabaseBackupDirectory,
   DatabaseBackupFileSummary,
   DatabaseBackupResponse,
   DatabaseCollection,
   DatabaseCollectionFields,
+  DatabaseDeleteBackupResponse,
+  DatabaseDependencyCheckResponse,
+  DatabaseDependencyResolveOperation,
+  DatabaseDependencyResolveResponse,
   DatabaseFilterCondition,
+  DatabaseOpenDirectoryResponse,
   DatabaseQueryResponse,
   DatabaseQueryRow,
   DatabaseRestoreBackupResponse,
   DatabaseUnlockResponse,
+  DatabaseWipeResponse,
   DashboardData,
   Ingredient,
   IngredientTransaction,
@@ -218,14 +225,61 @@ export const api = {
       method: 'DELETE',
       headers: { 'X-Database-Access-Token': accessToken }
     }),
+  checkDatabaseDependencies: (accessToken: string, collection: string, documentId: string) =>
+    request<DatabaseDependencyCheckResponse>('/api/admin/database/dependencies/check', {
+      method: 'POST',
+      headers: { 'X-Database-Access-Token': accessToken },
+      body: JSON.stringify({ collection, documentId })
+    }),
+  resolveDatabaseDependencies: (
+    accessToken: string,
+    payload: {
+      targetCollection: string;
+      targetDocumentId: string;
+      operations: DatabaseDependencyResolveOperation[];
+    }
+  ) =>
+    request<DatabaseDependencyResolveResponse>('/api/admin/database/dependencies/resolve', {
+      method: 'POST',
+      headers: { 'X-Database-Access-Token': accessToken },
+      body: JSON.stringify(payload)
+    }),
+  wipeDatabaseData: (
+    accessToken: string,
+    payload: {
+      scope: 'COLLECTION' | 'DATABASE';
+      collection?: string;
+      confirmText: string;
+    }
+  ) =>
+    request<DatabaseWipeResponse>('/api/admin/database/wipe', {
+      method: 'POST',
+      headers: { 'X-Database-Access-Token': accessToken },
+      body: JSON.stringify(payload)
+    }),
   backupDatabase: (accessToken: string) =>
     request<DatabaseBackupResponse>('/api/admin/database/backup', {
+      method: 'POST',
+      headers: { 'X-Database-Access-Token': accessToken }
+    }),
+  getDatabaseBackupDirectory: (accessToken: string) =>
+    request<DatabaseBackupDirectory>('/api/admin/database/backup-directory', {
+      headers: { 'X-Database-Access-Token': accessToken }
+    }),
+  openDatabaseBackupDirectory: (accessToken: string) =>
+    request<DatabaseOpenDirectoryResponse>('/api/admin/database/backup-directory/open', {
       method: 'POST',
       headers: { 'X-Database-Access-Token': accessToken }
     }),
   listDatabaseBackups: (accessToken: string) =>
     request<DatabaseBackupFileSummary[]>('/api/admin/database/backups', {
       headers: { 'X-Database-Access-Token': accessToken }
+    }),
+  deleteDatabaseBackup: (accessToken: string, fileName: string, confirmText: string) =>
+    request<DatabaseDeleteBackupResponse>('/api/admin/database/backups/delete', {
+      method: 'POST',
+      headers: { 'X-Database-Access-Token': accessToken },
+      body: JSON.stringify({ fileName, confirmText })
     }),
   getDatabaseBackupDetail: (accessToken: string, fileName: string) =>
     request<DatabaseBackupDetail>(`/api/admin/database/backups/${encodeURIComponent(fileName)}`, {

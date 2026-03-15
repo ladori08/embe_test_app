@@ -1,5 +1,8 @@
 package com.embe.backend.database;
 
+import com.embe.backend.audit.AuditAction;
+import com.embe.backend.audit.AuditLogService;
+import com.embe.backend.audit.AuditModule;
 import com.embe.backend.auth.AuthService;
 import com.embe.backend.common.ApiException;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -18,6 +21,7 @@ import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -26,12 +30,17 @@ import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Service
@@ -41,25 +50,36 @@ public class DatabaseConsoleService {
     private static final int DEFAULT_PAGE_SIZE = 50;
     private static final int MAX_PAGE_SIZE = 500;
     private static final int MAX_EXPORT_ROWS = 20_000;
+    private static final Pattern REFERENCE_KEY_PATTERN = Pattern.compile("(?i)(^_id$|^id$|.*id$|.*code$|.*sku$|.*email$)");
+    private static final Set<String> SOFT_REFERENCE_COLLECTIONS = Set.of(
+            "audit_logs",
+            "ingredient_stock_transactions",
+            "product_stock_logs",
+            "recipe_revisions",
+            "bake_records"
+    );
 
     private final MongoTemplate mongoTemplate;
     private final AuthService authService;
     private final ObjectMapper objectMapper;
     private final DatabaseConsoleSessionService sessionService;
     private final DatabaseBackupService backupService;
+    private final AuditLogService auditLogService;
 
     public DatabaseConsoleService(
             MongoTemplate mongoTemplate,
             AuthService authService,
             ObjectMapper objectMapper,
             DatabaseConsoleSessionService sessionService,
-            DatabaseBackupService backupService
+            DatabaseBackupService backupService,
+            AuditLogService auditLogService
     ) {
         this.mongoTemplate = mongoTemplate;
         this.authService = authService;
         this.objectMapper = objectMapper;
         this.sessionService = sessionService;
         this.backupService = backupService;
+        this.auditLogService = auditLogService;
     }
 
     public DatabaseUnlockResponse unlock(String password) {
@@ -67,7 +87,7 @@ public class DatabaseConsoleService {
         authService.verifyCurrentUserPassword(password);
         String userId = authService.currentUserId();
         DatabaseSessionToken sessionToken = sessionService.createSession(userId);
-        DatabaseBackupResponse backup = backupService.createBackup("AUTO", safeCurrentUserEmail());
+        DatabaseBackupResponse backup = backupService.createBackup("AUTO_ON_DATABASE_UNLOCK", safeCurrentUserEmail());
         return new DatabaseUnlockResponse(sessionToken.token(), sessionToken.expiresAt(), backup.fileName(), backup.filePath());
     }
 
@@ -161,25 +181,252 @@ public class DatabaseConsoleService {
         return toRow(replacement);
     }
 
+    public DatabaseDependencyCheckResponse checkDependencies(String accessToken, String collectionName, String documentId) {
+        validateAccess(accessToken);
+        String collection = normalizeCollection(collectionName);
+        ensureCollectionExists(collection);
+
+        Object resolvedId = resolveDocumentId(documentId);
+        Document targetDocument = findDocumentByResolvedId(collection, resolvedId, documentId);
+        if (targetDocument == null) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Document not found");
+        }
+
+        return buildDependencyReport(collection, targetDocument);
+    }
+
+    @Transactional
+    public DatabaseDependencyResolveResponse resolveDependencies(String accessToken, DatabaseDependencyResolveRequest request) {
+        validateAccess(accessToken);
+        String targetCollection = normalizeCollection(request.targetCollection());
+        Object targetResolvedId = resolveDocumentId(request.targetDocumentId());
+        Document targetDocument = findDocumentByResolvedId(targetCollection, targetResolvedId, request.targetDocumentId());
+        if (targetDocument == null) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Target document not found");
+        }
+
+        int applied = 0;
+        for (DatabaseDependencyResolveOperationRequest operation : request.operations()) {
+            String collection = normalizeCollection(operation.collection());
+            Object resolvedId = resolveDocumentId(operation.documentId());
+            Document sourceDocument = findDocumentByResolvedId(collection, resolvedId, operation.documentId());
+            if (sourceDocument == null) {
+                throw new ApiException(HttpStatus.NOT_FOUND, "Document not found for resolve operation: " + operation.documentId());
+            }
+
+            Map<String, Object> beforeSnapshot = toSerializableDocument(sourceDocument);
+            boolean changed = applyResolveOperation(sourceDocument, operation);
+            if (changed) {
+                mongoTemplate.save(sourceDocument, collection);
+                Map<String, Object> afterSnapshot = toSerializableDocument(sourceDocument);
+                recordDependencyResolveAudit(collection, operation, beforeSnapshot, afterSnapshot, targetCollection, request.targetDocumentId());
+                applied++;
+            }
+        }
+
+        return new DatabaseDependencyResolveResponse(
+                targetCollection,
+                stringifyScalar(targetDocument.get("_id")),
+                request.operations().size(),
+                applied
+        );
+    }
+
+    private void recordDependencyResolveAudit(
+            String sourceCollection,
+            DatabaseDependencyResolveOperationRequest operation,
+            Map<String, Object> beforeSnapshot,
+            Map<String, Object> afterSnapshot,
+            String targetCollection,
+            String targetDocumentId
+    ) {
+        AuditModule module = toAuditModule(sourceCollection);
+        if (module == null) {
+            return;
+        }
+
+        String entityId = extractSnapshotId(beforeSnapshot, operation.documentId());
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("sourceCollection", sourceCollection);
+        metadata.put("fieldPath", operation.fieldPath());
+        metadata.put("resolveAction", operation.action() == null ? "" : operation.action().name());
+        metadata.put("targetCollection", targetCollection);
+        metadata.put("targetDocumentId", targetDocumentId);
+        if (operation.replacementDocumentId() != null && !operation.replacementDocumentId().isBlank()) {
+            metadata.put("replacementDocumentId", operation.replacementDocumentId());
+        }
+
+        auditLogService.record(
+                module,
+                AuditAction.UPDATE,
+                "Resolved dependency in " + sourceCollection + " (" + entityId + ")",
+                entityId,
+                beforeSnapshot,
+                afterSnapshot,
+                metadata
+        );
+    }
+
+    private void recordDatabaseDeleteAudit(String collection, Document deletedDocument) {
+        AuditModule module = toAuditModule(collection);
+        if (module == null || deletedDocument == null) {
+            return;
+        }
+
+        Map<String, Object> beforeSnapshot = toSerializableDocument(deletedDocument);
+        String entityId = extractSnapshotId(beforeSnapshot, stringifyScalar(deletedDocument.get("_id")));
+        Map<String, Object> metadata = Map.of("collection", collection);
+
+        auditLogService.record(
+                module,
+                AuditAction.DELETE,
+                "Deleted document from " + collection + " (" + entityId + ")",
+                entityId,
+                beforeSnapshot,
+                null,
+                metadata
+        );
+    }
+
+    private String extractSnapshotId(Map<String, Object> snapshot, String fallback) {
+        if (snapshot == null) {
+            return fallback == null ? "" : fallback;
+        }
+        Object rawId = snapshot.get("_id");
+        if (rawId == null) {
+            return fallback == null ? "" : fallback;
+        }
+        String value = String.valueOf(rawId).trim();
+        if (!value.isBlank()) {
+            return value;
+        }
+        return fallback == null ? "" : fallback;
+    }
+
+    private AuditModule toAuditModule(String collection) {
+        if (collection == null || collection.isBlank()) {
+            return null;
+        }
+        return switch (collection.trim()) {
+            case "ingredients", "ingredient_stock_transactions" -> AuditModule.INGREDIENT;
+            case "products", "product_lots", "product_stock_logs" -> AuditModule.PRODUCT;
+            case "product_categories" -> AuditModule.CATEGORY;
+            case "recipes", "recipe_revisions" -> AuditModule.RECIPE;
+            case "bake_records" -> AuditModule.PRODUCTION;
+            case "orders" -> AuditModule.ORDER;
+            case "users" -> AuditModule.USER;
+            default -> null;
+        };
+    }
+
     public void deleteDocument(String accessToken, String collectionName, String documentId) {
         validateAccess(accessToken);
         String collection = normalizeCollection(collectionName);
         ensureCollectionExists(collection);
 
         Object resolvedId = resolveDocumentId(documentId);
-        Query query = Query.query(Criteria.where("_id").is(resolvedId));
-        DeleteResult deleteResult = mongoTemplate.remove(query, collection);
-        if (deleteResult.getDeletedCount() == 0 && resolvedId instanceof ObjectId) {
-            deleteResult = mongoTemplate.remove(Query.query(Criteria.where("_id").is(documentId)), collection);
+        Document existing = findDocumentByResolvedId(collection, resolvedId, documentId);
+        if (existing == null) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Document not found");
         }
+
+        DatabaseDependencyCheckResponse dependencyReport = buildDependencyReport(collection, existing);
+        if (dependencyReport.dependencyCount() > 0) {
+            throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "Cannot delete because this document is referenced by other data",
+                    Map.of(
+                            "code", "DEPENDENCY_FOUND",
+                            "dependencyCount", dependencyReport.dependencyCount(),
+                            "dependencyInfo", dependencyReport
+                    )
+            );
+        }
+
+        Query query = Query.query(Criteria.where("_id").is(existing.get("_id")));
+        DeleteResult deleteResult = mongoTemplate.remove(query, collection);
         if (deleteResult.getDeletedCount() == 0) {
             throw new ApiException(HttpStatus.NOT_FOUND, "Document not found");
+        }
+        recordDatabaseDeleteAudit(collection, existing);
+    }
+
+    @Transactional
+    public DatabaseWipeResponse wipe(String accessToken, DatabaseWipeRequest request) {
+        validateAccess(accessToken);
+
+        DatabaseWipeScope scope = request.scope() == null ? DatabaseWipeScope.COLLECTION : request.scope();
+        String normalizedCollection = null;
+        String expectedConfirmText;
+        String backupTrigger;
+
+        if (scope == DatabaseWipeScope.COLLECTION) {
+            normalizedCollection = normalizeCollection(request.collection());
+            ensureCollectionExists(normalizedCollection);
+            expectedConfirmText = "WIPE COLLECTION " + normalizedCollection;
+            backupTrigger = "AUTO_BEFORE_WIPE_COLLECTION";
+        } else {
+            expectedConfirmText = "WIPE DATABASE";
+            backupTrigger = "AUTO_BEFORE_WIPE_DATABASE";
+        }
+
+        String providedConfirm = request.confirmText() == null ? "" : request.confirmText().trim();
+        if (!expectedConfirmText.equalsIgnoreCase(providedConfirm)) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "Invalid confirmation text",
+                    Map.of(
+                            "code", "INVALID_WIPE_CONFIRM",
+                            "expected", expectedConfirmText
+                    )
+            );
+        }
+
+        DatabaseBackupResponse backup = backupService.createBackup(backupTrigger, safeCurrentUserEmail());
+        try {
+            long deletedDocuments = 0L;
+            if (scope == DatabaseWipeScope.COLLECTION) {
+                deletedDocuments = mongoTemplate.getCollection(normalizedCollection).deleteMany(new Document()).getDeletedCount();
+            } else {
+                List<String> collections = new ArrayList<>(mongoTemplate.getCollectionNames());
+                for (String collection : collections) {
+                    deletedDocuments += mongoTemplate.getCollection(collection).deleteMany(new Document()).getDeletedCount();
+                }
+            }
+            return new DatabaseWipeResponse(scope, normalizedCollection, deletedDocuments, backup.fileName());
+        } catch (RuntimeException ex) {
+            throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "Wipe failed. Transaction rolled back.",
+                    Map.of(
+                            "code", "WIPE_ROLLBACK",
+                            "scope", scope.name(),
+                            "collection", normalizedCollection == null ? "" : normalizedCollection,
+                            "backupFile", backup.fileName(),
+                            "reason", rootErrorMessage(ex)
+                    )
+            );
         }
     }
 
     public DatabaseBackupResponse backup(String accessToken) {
         validateAccess(accessToken);
         return backupService.createBackup("MANUAL", safeCurrentUserEmail());
+    }
+
+    public DatabaseBackupDirectoryResponse getBackupDirectory(String accessToken) {
+        validateAccess(accessToken);
+        return backupService.getBackupDirectory();
+    }
+
+    public DatabaseOpenDirectoryResponse openBackupDirectory(String accessToken) {
+        validateAccess(accessToken);
+        return backupService.openBackupDirectory();
+    }
+
+    public DatabaseDeleteBackupResponse deleteBackup(String accessToken, String fileName, String confirmText) {
+        validateAccess(accessToken);
+        return backupService.deleteBackupFile(fileName, confirmText);
     }
 
     public List<DatabaseBackupFileSummaryResponse> listBackups(String accessToken) {
@@ -253,6 +500,368 @@ public class DatabaseConsoleService {
         String field = sortField == null || sortField.isBlank() ? "_id" : sortField.trim();
         Sort.Direction direction = "ASC".equalsIgnoreCase(sortDirection) ? Sort.Direction.ASC : Sort.Direction.DESC;
         query.with(Sort.by(direction, field));
+    }
+
+    private DatabaseDependencyCheckResponse buildDependencyReport(String targetCollection, Document targetDocument) {
+        String targetId = stringifyScalar(targetDocument.get("_id"));
+        String targetTitle = buildDocumentTitle(targetDocument, targetId);
+        Set<String> candidateValues = buildCandidateValues(targetDocument);
+        if (candidateValues.isEmpty() && targetId != null && !targetId.isBlank()) {
+            candidateValues = Set.of(targetId);
+        }
+
+        List<DatabaseDependencyReferenceResponse> dependencies = findDependencies(
+                targetCollection,
+                targetId,
+                candidateValues
+        );
+        return new DatabaseDependencyCheckResponse(
+                targetCollection,
+                targetId == null ? "" : targetId,
+                targetTitle,
+                dependencies.size(),
+                dependencies
+        );
+    }
+
+    private Set<String> buildCandidateValues(Document targetDocument) {
+        Set<String> candidates = new HashSet<>();
+        addCandidate(candidates, targetDocument.get("_id"));
+        for (Map.Entry<String, Object> entry : targetDocument.entrySet()) {
+            if (!REFERENCE_KEY_PATTERN.matcher(entry.getKey()).matches()) {
+                continue;
+            }
+            addCandidate(candidates, entry.getValue());
+        }
+        candidates.removeIf(value -> value == null || value.isBlank());
+        return candidates;
+    }
+
+    private void addCandidate(Set<String> candidates, Object value) {
+        if (!isScalarValue(value)) {
+            return;
+        }
+        String normalized = stringifyScalar(value);
+        if (normalized != null && !normalized.isBlank()) {
+            candidates.add(normalized);
+        }
+    }
+
+    private List<DatabaseDependencyReferenceResponse> findDependencies(
+            String targetCollection,
+            String targetDocumentId,
+            Set<String> candidateValues
+    ) {
+        if (candidateValues.isEmpty()) {
+            return List.of();
+        }
+
+        List<String> collections = new ArrayList<>(mongoTemplate.getCollectionNames());
+        collections.sort(String::compareToIgnoreCase);
+        List<DatabaseDependencyReferenceResponse> result = new ArrayList<>();
+
+        for (String collection : collections) {
+            if (SOFT_REFERENCE_COLLECTIONS.contains(collection)) {
+                continue;
+            }
+            List<Document> documents = mongoTemplate.findAll(Document.class, collection);
+            for (Document document : documents) {
+                String documentId = stringifyScalar(document.get("_id"));
+                if (Objects.equals(collection, targetCollection) && Objects.equals(documentId, targetDocumentId)) {
+                    continue;
+                }
+                List<DependencyMatch> matches = new ArrayList<>();
+                collectDependencyMatches("", document, candidateValues, matches);
+                if (matches.isEmpty()) {
+                    continue;
+                }
+                String title = buildDocumentTitle(document, documentId);
+                for (DependencyMatch match : matches) {
+                    result.add(new DatabaseDependencyReferenceResponse(
+                            collection,
+                            documentId == null ? "" : documentId,
+                            title,
+                            match.path(),
+                            stringifyValue(match.value())
+                    ));
+                }
+            }
+        }
+
+        result.sort(Comparator
+                .comparing(DatabaseDependencyReferenceResponse::collection, String::compareToIgnoreCase)
+                .thenComparing(DatabaseDependencyReferenceResponse::documentId)
+                .thenComparing(DatabaseDependencyReferenceResponse::fieldPath));
+        return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void collectDependencyMatches(
+            String prefix,
+            Object value,
+            Set<String> candidateValues,
+            List<DependencyMatch> matches
+    ) {
+        if (value == null) {
+            return;
+        }
+        if (value instanceof Document document) {
+            for (Map.Entry<String, Object> entry : document.entrySet()) {
+                String fieldPath = prefix.isBlank() ? entry.getKey() : prefix + "." + entry.getKey();
+                collectDependencyMatches(fieldPath, entry.getValue(), candidateValues, matches);
+            }
+            return;
+        }
+        if (value instanceof Map<?, ?> mapValue) {
+            for (Map.Entry<?, ?> entry : mapValue.entrySet()) {
+                String key = String.valueOf(entry.getKey());
+                String fieldPath = prefix.isBlank() ? key : prefix + "." + key;
+                collectDependencyMatches(fieldPath, entry.getValue(), candidateValues, matches);
+            }
+            return;
+        }
+        if (value instanceof List<?> listValue) {
+            for (int i = 0; i < listValue.size(); i++) {
+                Object item = listValue.get(i);
+                String fieldPath = prefix + "[" + i + "]";
+                collectDependencyMatches(fieldPath, item, candidateValues, matches);
+            }
+            return;
+        }
+        if (!isScalarValue(value)) {
+            return;
+        }
+        String normalized = stringifyScalar(value);
+        if (normalized == null || normalized.isBlank()) {
+            return;
+        }
+        if (candidateValues.contains(normalized)) {
+            matches.add(new DependencyMatch(prefix, value));
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private boolean applyResolveOperation(Document sourceDocument, DatabaseDependencyResolveOperationRequest operation) {
+        List<PathStep> steps = parseFieldPath(operation.fieldPath());
+        ResolvedPath resolvedPath = resolvePath(sourceDocument, steps);
+        if (resolvedPath == null) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "Field path not found for resolve operation",
+                    Map.of(
+                            "collection", operation.collection(),
+                            "documentId", operation.documentId(),
+                            "fieldPath", operation.fieldPath()
+                    )
+            );
+        }
+
+        if (operation.action() == DatabaseDependencyResolveAction.REMOVE) {
+            if (resolvedPath.listContext() != null
+                    && resolvedPath.terminal().kind() == PathStepKind.KEY
+                    && REFERENCE_KEY_PATTERN.matcher(resolvedPath.terminal().key()).matches()) {
+                List<Object> list = resolvedPath.listContext().list();
+                int index = resolvedPath.listContext().index();
+                if (index < 0 || index >= list.size()) {
+                    return false;
+                }
+                list.remove(index);
+                return true;
+            }
+
+            if (resolvedPath.parent() instanceof Map<?, ?> parentMap
+                    && resolvedPath.terminal().kind() == PathStepKind.KEY) {
+                String key = resolvedPath.terminal().key();
+                if (!((Map<String, Object>) parentMap).containsKey(key)) {
+                    return false;
+                }
+                ((Map<String, Object>) parentMap).remove(key);
+                return true;
+            }
+
+            if (resolvedPath.parent() instanceof List<?> parentList
+                    && resolvedPath.terminal().kind() == PathStepKind.INDEX) {
+                int index = resolvedPath.terminal().index();
+                if (index < 0 || index >= parentList.size()) {
+                    return false;
+                }
+                ((List<Object>) parentList).remove(index);
+                return true;
+            }
+
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Unsupported remove operation at path: " + operation.fieldPath());
+        }
+
+        Object replacement = resolveReplacementValue(operation, resolvedPath.currentValue());
+        if (Objects.equals(resolvedPath.currentValue(), replacement)) {
+            return false;
+        }
+
+        if (resolvedPath.parent() instanceof Map<?, ?> parentMap
+                && resolvedPath.terminal().kind() == PathStepKind.KEY) {
+            ((Map<String, Object>) parentMap).put(resolvedPath.terminal().key(), replacement);
+            return true;
+        }
+        if (resolvedPath.parent() instanceof List<?> parentList
+                && resolvedPath.terminal().kind() == PathStepKind.INDEX) {
+            int index = resolvedPath.terminal().index();
+            if (index < 0 || index >= parentList.size()) {
+                return false;
+            }
+            ((List<Object>) parentList).set(index, replacement);
+            return true;
+        }
+        throw new ApiException(HttpStatus.BAD_REQUEST, "Unsupported replace operation at path: " + operation.fieldPath());
+    }
+
+    private Object resolveReplacementValue(DatabaseDependencyResolveOperationRequest operation, Object currentValue) {
+        if (operation.action() != DatabaseDependencyResolveAction.REPLACE) {
+            return null;
+        }
+
+        if (operation.replacementValue() != null && !operation.replacementValue().isBlank()) {
+            return parseValue(operation.replacementValue());
+        }
+
+        if (operation.replacementDocumentId() == null || operation.replacementDocumentId().isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Replacement document id is required for REPLACE action");
+        }
+
+        String replacementCollection = operation.replacementCollection();
+        if (replacementCollection != null && !replacementCollection.isBlank()) {
+            String normalizedCollection = normalizeCollection(replacementCollection);
+            Object replacementResolvedId = resolveDocumentId(operation.replacementDocumentId());
+            Document replacementDocument = findDocumentByResolvedId(
+                    normalizedCollection,
+                    replacementResolvedId,
+                    operation.replacementDocumentId()
+            );
+            if (replacementDocument == null) {
+                throw new ApiException(HttpStatus.NOT_FOUND, "Replacement document not found");
+            }
+        }
+
+        if (currentValue instanceof ObjectId) {
+            if (!ObjectId.isValid(operation.replacementDocumentId().trim())) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Replacement id must be ObjectId for current field type");
+            }
+            return new ObjectId(operation.replacementDocumentId().trim());
+        }
+
+        return operation.replacementDocumentId().trim();
+    }
+
+    private List<PathStep> parseFieldPath(String fieldPath) {
+        if (fieldPath == null || fieldPath.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Field path is required");
+        }
+        Matcher matcher = Pattern.compile("([^.\\[\\]]+)|\\[(\\d+)]").matcher(fieldPath.trim());
+        List<PathStep> steps = new ArrayList<>();
+        while (matcher.find()) {
+            String key = matcher.group(1);
+            String index = matcher.group(2);
+            if (key != null) {
+                steps.add(PathStep.key(key));
+            } else if (index != null) {
+                steps.add(PathStep.index(Integer.parseInt(index)));
+            }
+        }
+        if (steps.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Invalid field path: " + fieldPath);
+        }
+        return steps;
+    }
+
+    @SuppressWarnings("unchecked")
+    private ResolvedPath resolvePath(Document sourceDocument, List<PathStep> steps) {
+        Object current = sourceDocument;
+        Object parent = null;
+        ListContext listContext = null;
+
+        for (int i = 0; i < steps.size(); i++) {
+            PathStep step = steps.get(i);
+            boolean terminal = i == steps.size() - 1;
+
+            if (step.kind() == PathStepKind.KEY) {
+                if (!(current instanceof Map<?, ?> mapValue)) {
+                    return null;
+                }
+                if (terminal) {
+                    return new ResolvedPath(mapValue, step, ((Map<String, Object>) mapValue).get(step.key()), listContext);
+                }
+                parent = mapValue;
+                current = ((Map<String, Object>) mapValue).get(step.key());
+                if (current == null) {
+                    return null;
+                }
+                continue;
+            }
+
+            if (!(current instanceof List<?> listValue)) {
+                return null;
+            }
+            int index = step.index();
+            if (index < 0 || index >= listValue.size()) {
+                return null;
+            }
+            if (terminal) {
+                return new ResolvedPath(listValue, step, listValue.get(index), listContext);
+            }
+            parent = listValue;
+            listContext = new ListContext((List<Object>) listValue, index);
+            current = listValue.get(index);
+            if (current == null) {
+                return null;
+            }
+        }
+        return parent == null ? null : new ResolvedPath(parent, steps.getLast(), current, listContext);
+    }
+
+    private boolean isScalarValue(Object value) {
+        return value instanceof String
+                || value instanceof Number
+                || value instanceof Boolean
+                || value instanceof ObjectId
+                || value instanceof Instant
+                || value instanceof Date
+                || value instanceof Decimal128;
+    }
+
+    private String stringifyScalar(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof ObjectId objectId) {
+            return objectId.toHexString();
+        }
+        if (value instanceof Instant instant) {
+            return instant.toString();
+        }
+        if (value instanceof Date date) {
+            return date.toInstant().toString();
+        }
+        if (value instanceof Decimal128 decimal128) {
+            return decimal128.bigDecimalValue().stripTrailingZeros().toPlainString();
+        }
+        return String.valueOf(value).trim();
+    }
+
+    private String buildDocumentTitle(Document document, String fallbackId) {
+        List<String> candidateKeys = List.of("name", "title", "email", "sku", "ingredientCode", "lotCode", "productId", "recipeId");
+        for (String key : candidateKeys) {
+            Object value = document.get(key);
+            if (value == null) {
+                continue;
+            }
+            String normalized = stringifyScalar(value);
+            if (normalized != null && !normalized.isBlank()) {
+                return key + ": " + normalized;
+            }
+        }
+        if (fallbackId == null || fallbackId.isBlank()) {
+            return "Document";
+        }
+        return "id: " + fallbackId;
     }
 
     @SuppressWarnings("unchecked")
@@ -597,11 +1206,43 @@ public class DatabaseConsoleService {
         return "\"" + cell.replace("\"", "\"\"") + "\"";
     }
 
+    private record DependencyMatch(String path, Object value) {
+    }
+
+    private record ResolvedPath(Object parent, PathStep terminal, Object currentValue, ListContext listContext) {
+    }
+
+    private record ListContext(List<Object> list, int index) {
+    }
+
+    private enum PathStepKind {
+        KEY,
+        INDEX
+    }
+
+    private record PathStep(PathStepKind kind, String key, int index) {
+        static PathStep key(String key) {
+            return new PathStep(PathStepKind.KEY, key, -1);
+        }
+
+        static PathStep index(int index) {
+            return new PathStep(PathStepKind.INDEX, null, index);
+        }
+    }
+
     private String safeCurrentUserEmail() {
         try {
             return authService.currentUserEmail();
         } catch (Exception ignored) {
             return "system";
         }
+    }
+
+    private String rootErrorMessage(Throwable throwable) {
+        Throwable cursor = throwable;
+        while (cursor.getCause() != null) {
+            cursor = cursor.getCause();
+        }
+        return cursor.getMessage() == null ? "Unknown error" : cursor.getMessage();
     }
 }
