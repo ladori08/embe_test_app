@@ -275,10 +275,19 @@ export default function AdminDatabasePage() {
   const [replacementLoading, setReplacementLoading] = useState(false);
   const [bulkReplacementDocumentId, setBulkReplacementDocumentId] = useState('');
 
+  const [wipeModalOpen, setWipeModalOpen] = useState(false);
+  const [wipeScope, setWipeScope] = useState<'COLLECTION' | 'DATABASE'>('COLLECTION');
+  const [wipeConfirmText, setWipeConfirmText] = useState('');
+  const [wiping, setWiping] = useState(false);
+  const [wipeRollbackOpen, setWipeRollbackOpen] = useState(false);
+  const [wipeRollbackMessage, setWipeRollbackMessage] = useState('');
+
   const isUnlocked = accessToken.length > 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const canPrev = page > 1;
   const canNext = page < totalPages;
+  const wipeExpectedConfirmText =
+    wipeScope === 'DATABASE' ? 'WIPE DATABASE' : `WIPE COLLECTION ${selectedCollection || '<collection>'}`;
 
   const rawColumnNames = useMemo(() => {
     const fields = new Set<string>(['_id']);
@@ -1077,6 +1086,57 @@ export default function AdminDatabasePage() {
     }
   };
 
+  const openWipeModal = (scope: 'COLLECTION' | 'DATABASE') => {
+    if (scope === 'COLLECTION' && !selectedCollection) {
+      return;
+    }
+    setWipeScope(scope);
+    setWipeConfirmText('');
+    setWipeModalOpen(true);
+  };
+
+  const executeWipe = async () => {
+    if (!selectedCollection && wipeScope === 'COLLECTION') {
+      return;
+    }
+    setWiping(true);
+    try {
+      const result = await api.wipeDatabaseData(accessToken, {
+        scope: wipeScope,
+        collection: wipeScope === 'COLLECTION' ? selectedCollection : undefined,
+        confirmText: wipeConfirmText
+      });
+      setWipeModalOpen(false);
+      setWipeConfirmText('');
+      setInfoMessage(
+        t('admin.database.wipeSuccess', {
+          scope: result.scope === 'DATABASE' ? t('admin.database.wipeDatabaseLabel') : result.collection || selectedCollection,
+          count: result.deletedDocuments
+        })
+      );
+      await Promise.all([loadCollections(accessToken), loadReferenceData()]);
+      if (backupListOpen) {
+        await loadBackupList();
+      }
+    } catch (err) {
+      if (err instanceof ApiError && typeof err.details === 'object' && err.details != null) {
+        const detailObj = err.details as { code?: string; reason?: string; backupFile?: string };
+        if (detailObj.code === 'WIPE_ROLLBACK') {
+          setWipeRollbackMessage(
+            t('admin.database.wipeRollbackMessage', {
+              reason: detailObj.reason || t('admin.database.queryFailed'),
+              backup: detailObj.backupFile || '-'
+            })
+          );
+          setWipeRollbackOpen(true);
+        }
+      }
+      setQueryError(err instanceof Error ? err.message : t('admin.database.queryFailed'));
+    } finally {
+      setWiping(false);
+    }
+  };
+
   const runManualBackup = async () => {
     setBackupRunning(true);
     try {
@@ -1235,6 +1295,17 @@ export default function AdminDatabasePage() {
                   <div className="flex flex-wrap gap-2 lg:justify-end">
                     <Button type="button" variant="outline" onClick={runManualBackup} disabled={backupRunning || !selectedCollection}>
                       {backupRunning ? t('admin.database.backupRunning') : t('admin.database.manualBackup')}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => openWipeModal('COLLECTION')}
+                      disabled={!selectedCollection || wiping}
+                    >
+                      {t('admin.database.wipeCollection')}
+                    </Button>
+                    <Button type="button" variant="outline" onClick={() => openWipeModal('DATABASE')} disabled={wiping}>
+                      {t('admin.database.wipeDatabase')}
                     </Button>
                     <Button type="button" variant="outline" onClick={() => void openBackupList()} disabled={backupListLoading}>
                       {t('admin.database.backupList')}
@@ -1593,6 +1664,49 @@ export default function AdminDatabasePage() {
           ) : (
             <p className="text-sm text-muted">{t('admin.database.empty')}</p>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={wipeModalOpen} onOpenChange={setWipeModalOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{t('admin.database.wipeTitle')}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <p className="text-red-600">
+              {t('admin.database.wipeWarning', {
+                scope: wipeScope === 'DATABASE' ? t('admin.database.wipeDatabaseLabel') : selectedCollection || ''
+              })}
+            </p>
+            <p className="text-muted">{t('admin.database.wipeConfirmHelp', { text: wipeExpectedConfirmText })}</p>
+            <Input value={wipeConfirmText} onChange={event => setWipeConfirmText(event.target.value)} placeholder={wipeExpectedConfirmText} />
+          </div>
+          <div className="mt-3 flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setWipeModalOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              type="button"
+              disabled={wiping || !wipeConfirmText.trim() || wipeConfirmText.trim().toUpperCase() !== wipeExpectedConfirmText.toUpperCase()}
+              onClick={() => void executeWipe()}
+            >
+              {wiping ? t('admin.database.wiping') : t('admin.database.wipeConfirmButton')}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={wipeRollbackOpen} onOpenChange={setWipeRollbackOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{t('admin.database.wipeRollbackTitle')}</DialogTitle>
+          </DialogHeader>
+          <p className="whitespace-pre-wrap text-sm">{wipeRollbackMessage || t('admin.database.queryFailed')}</p>
+          <div className="mt-3 flex justify-end">
+            <Button type="button" variant="outline" onClick={() => setWipeRollbackOpen(false)}>
+              {t('common.confirm')}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 

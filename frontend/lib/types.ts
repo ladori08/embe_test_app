@@ -334,3 +334,12 @@ export interface DatabaseDependencyResolveResponse {
   totalOperations: number;
   appliedOperations: number;
 }
+
+export type DatabaseWipeScope = 'COLLECTION' | 'DATABASE';
+
+export interface DatabaseWipeResponse {
+  scope: DatabaseWipeScope;
+  collection?: string | null;
+  deletedDocuments: number;
+  backupFile: string;
+}

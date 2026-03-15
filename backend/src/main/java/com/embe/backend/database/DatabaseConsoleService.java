@@ -74,7 +74,7 @@ public class DatabaseConsoleService {
         authService.verifyCurrentUserPassword(password);
         String userId = authService.currentUserId();
         DatabaseSessionToken sessionToken = sessionService.createSession(userId);
-        DatabaseBackupResponse backup = backupService.createBackup("AUTO", safeCurrentUserEmail());
+        DatabaseBackupResponse backup = backupService.createBackup("AUTO_ON_DATABASE_UNLOCK", safeCurrentUserEmail());
         return new DatabaseUnlockResponse(sessionToken.token(), sessionToken.expiresAt(), backup.fileName(), backup.filePath());
     }
 
@@ -246,6 +246,64 @@ public class DatabaseConsoleService {
         DeleteResult deleteResult = mongoTemplate.remove(query, collection);
         if (deleteResult.getDeletedCount() == 0) {
             throw new ApiException(HttpStatus.NOT_FOUND, "Document not found");
+        }
+    }
+
+    @Transactional
+    public DatabaseWipeResponse wipe(String accessToken, DatabaseWipeRequest request) {
+        validateAccess(accessToken);
+
+        DatabaseWipeScope scope = request.scope() == null ? DatabaseWipeScope.COLLECTION : request.scope();
+        String normalizedCollection = null;
+        String expectedConfirmText;
+        String backupTrigger;
+
+        if (scope == DatabaseWipeScope.COLLECTION) {
+            normalizedCollection = normalizeCollection(request.collection());
+            ensureCollectionExists(normalizedCollection);
+            expectedConfirmText = "WIPE COLLECTION " + normalizedCollection;
+            backupTrigger = "AUTO_BEFORE_WIPE_COLLECTION";
+        } else {
+            expectedConfirmText = "WIPE DATABASE";
+            backupTrigger = "AUTO_BEFORE_WIPE_DATABASE";
+        }
+
+        String providedConfirm = request.confirmText() == null ? "" : request.confirmText().trim();
+        if (!expectedConfirmText.equalsIgnoreCase(providedConfirm)) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "Invalid confirmation text",
+                    Map.of(
+                            "code", "INVALID_WIPE_CONFIRM",
+                            "expected", expectedConfirmText
+                    )
+            );
+        }
+
+        DatabaseBackupResponse backup = backupService.createBackup(backupTrigger, safeCurrentUserEmail());
+        try {
+            long deletedDocuments = 0L;
+            if (scope == DatabaseWipeScope.COLLECTION) {
+                deletedDocuments = mongoTemplate.getCollection(normalizedCollection).deleteMany(new Document()).getDeletedCount();
+            } else {
+                List<String> collections = new ArrayList<>(mongoTemplate.getCollectionNames());
+                for (String collection : collections) {
+                    deletedDocuments += mongoTemplate.getCollection(collection).deleteMany(new Document()).getDeletedCount();
+                }
+            }
+            return new DatabaseWipeResponse(scope, normalizedCollection, deletedDocuments, backup.fileName());
+        } catch (RuntimeException ex) {
+            throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "Wipe failed. Transaction rolled back.",
+                    Map.of(
+                            "code", "WIPE_ROLLBACK",
+                            "scope", scope.name(),
+                            "collection", normalizedCollection == null ? "" : normalizedCollection,
+                            "backupFile", backup.fileName(),
+                            "reason", rootErrorMessage(ex)
+                    )
+            );
         }
     }
 
@@ -1059,5 +1117,13 @@ public class DatabaseConsoleService {
         } catch (Exception ignored) {
             return "system";
         }
+    }
+
+    private String rootErrorMessage(Throwable throwable) {
+        Throwable cursor = throwable;
+        while (cursor.getCause() != null) {
+            cursor = cursor.getCause();
+        }
+        return cursor.getMessage() == null ? "Unknown error" : cursor.getMessage();
     }
 }

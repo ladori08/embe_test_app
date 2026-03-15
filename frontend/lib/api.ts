@@ -16,6 +16,7 @@ import {
   DatabaseQueryRow,
   DatabaseRestoreBackupResponse,
   DatabaseUnlockResponse,
+  DatabaseWipeResponse,
   DashboardData,
   Ingredient,
   IngredientTransaction,
@@ -236,6 +237,19 @@ export const api = {
     }
   ) =>
     request<DatabaseDependencyResolveResponse>('/api/admin/database/dependencies/resolve', {
+      method: 'POST',
+      headers: { 'X-Database-Access-Token': accessToken },
+      body: JSON.stringify(payload)
+    }),
+  wipeDatabaseData: (
+    accessToken: string,
+    payload: {
+      scope: 'COLLECTION' | 'DATABASE';
+      collection?: string;
+      confirmText: string;
+    }
+  ) =>
+    request<DatabaseWipeResponse>('/api/admin/database/wipe', {
       method: 'POST',
       headers: { 'X-Database-Access-Token': accessToken },
       body: JSON.stringify(payload)

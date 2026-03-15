@@ -325,8 +325,8 @@ public class DatabaseBackupService {
         if (trigger == null || trigger.isBlank()) {
             return "MANUAL";
         }
-        String value = trigger.trim().toUpperCase(Locale.ROOT);
-        if (!"AUTO".equals(value) && !"MANUAL".equals(value)) {
+        String value = trigger.trim().toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9_]", "_");
+        if (value.isBlank()) {
             return "MANUAL";
         }
         return value;

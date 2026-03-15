@@ -77,6 +77,14 @@ public class DatabaseConsoleController {
         return databaseConsoleService.resolveDependencies(accessToken, request);
     }
 
+    @PostMapping("/wipe")
+    public DatabaseWipeResponse wipe(
+            @RequestHeader(name = ACCESS_TOKEN_HEADER) String accessToken,
+            @Valid @RequestBody DatabaseWipeRequest request
+    ) {
+        return databaseConsoleService.wipe(accessToken, request);
+    }
+
     @PutMapping("/documents/{collection}/{id}")
     public DatabaseQueryRow updateDocument(
             @RequestHeader(name = ACCESS_TOKEN_HEADER) String accessToken,
