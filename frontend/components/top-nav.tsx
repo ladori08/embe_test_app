@@ -19,7 +19,7 @@ export function TopNav() {
 
   return (
     <header className="sticky top-0 z-20 border-b border-border/70 bg-background/90 backdrop-blur">
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
+      <div className="mx-auto flex w-full items-center justify-between px-3 py-3 sm:px-4 xl:px-6 2xl:px-8">
         <Link href="/shop" className="text-2xl font-script text-ink">
           Embé Bakery
         </Link>
