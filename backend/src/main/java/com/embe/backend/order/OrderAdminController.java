@@ -20,10 +20,11 @@ public class OrderAdminController {
     @GetMapping
     public List<OrderResponse> list(
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) String buyerName,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to
     ) {
-        return orderService.listAll(status, from, to);
+        return orderService.listAll(status, buyerName, from, to);
     }
 
     @PatchMapping("/{id}/status")

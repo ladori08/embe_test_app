@@ -48,6 +48,7 @@ export default function AdminOrdersPage() {
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [timelineError, setTimelineError] = useState('');
   const [statusFilter, setStatusFilter] = useState<OrderStatus | ''>('');
+  const [buyerNameFilter, setBuyerNameFilter] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [error, setError] = useState('');
@@ -71,12 +72,14 @@ export default function AdminOrdersPage() {
 
   const load = (filters?: {
     status?: OrderStatus | '';
+    buyerName?: string;
     fromDate?: string;
     toDate?: string;
   }) =>
     api
       .listOrdersAdmin({
         status: (filters?.status ?? statusFilter) || undefined,
+        buyerName: (filters?.buyerName ?? buyerNameFilter).trim() || undefined,
         from: toFilterFromIso(filters?.fromDate ?? fromDate),
         to: toFilterToIso(filters?.toDate ?? toDate)
       })
@@ -133,9 +136,10 @@ export default function AdminOrdersPage() {
 
   const resetFilter = () => {
     setStatusFilter('');
+    setBuyerNameFilter('');
     setFromDate('');
     setToDate('');
-    void load({ status: '', fromDate: '', toDate: '' });
+    void load({ status: '', buyerName: '', fromDate: '', toDate: '' });
   };
 
   return (
@@ -145,7 +149,7 @@ export default function AdminOrdersPage() {
         <AdminShell title={t('admin.nav.orders')}>
           <Card>
             {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
-            <form className="mb-3 grid gap-2 md:grid-cols-[220px_180px_180px_120px_120px]" onSubmit={applyFilter}>
+            <form className="mb-3 grid gap-2 md:grid-cols-[220px_1fr_180px_180px_120px_120px]" onSubmit={applyFilter}>
               <Select value={statusFilter} onChange={e => setStatusFilter(e.target.value as OrderStatus | '')}>
                 <option value="">{t('admin.orders.filterAllStatuses')}</option>
                 <option value="NEW">{t('status.NEW')}</option>
@@ -154,6 +158,12 @@ export default function AdminOrdersPage() {
                 <option value="COMPLETED">{t('status.COMPLETED')}</option>
                 <option value="CANCELLED">{t('status.CANCELLED')}</option>
               </Select>
+              <Input
+                value={buyerNameFilter}
+                onChange={e => setBuyerNameFilter(e.target.value)}
+                placeholder={t('admin.orders.filterBuyerName')}
+                aria-label={t('admin.orders.filterBuyerName')}
+              />
               <Input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} aria-label={t('admin.orders.filterFrom')} />
               <Input type="date" value={toDate} onChange={e => setToDate(e.target.value)} aria-label={t('admin.orders.filterTo')} />
               <Button type="submit">{t('admin.orders.filterApply')}</Button>

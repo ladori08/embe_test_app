@@ -327,6 +327,9 @@ export default function AdminProductsPage() {
   const hasSelectedCategoryInList = selectedCategory
     ? categories.some(category => category.name.toLowerCase() === selectedCategory.toLowerCase())
     : false;
+  const resetCategoryFilter = () => {
+    setCategoryFilter(ALL_CATEGORIES_FILTER);
+  };
 
   return (
     <>
@@ -350,6 +353,9 @@ export default function AdminProductsPage() {
                     </option>
                   ))}
                 </Select>
+                <Button type="button" variant="outline" onClick={resetCategoryFilter}>
+                  {t('admin.products.filterReset')}
+                </Button>
                 <Button variant="outline" onClick={openCategoryManager}>
                   {t('admin.products.manageCategories')}
                 </Button>
