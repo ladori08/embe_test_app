@@ -159,9 +159,10 @@ export const api = {
     }),
   listMyOrders: () => request<Order[]>('/api/orders'),
 
-  listOrdersAdmin: (params: { status?: string; from?: string; to?: string } = {}) => {
+  listOrdersAdmin: (params: { status?: string; buyerName?: string; from?: string; to?: string } = {}) => {
     const search = new URLSearchParams();
     if (params.status) search.set('status', params.status);
+    if (params.buyerName) search.set('buyerName', params.buyerName);
     if (params.from) search.set('from', params.from);
     if (params.to) search.set('to', params.to);
     const query = search.toString();

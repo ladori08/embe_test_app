@@ -236,7 +236,7 @@ public class OrderService {
         auditLogService.record(
                 AuditModule.ORDER,
                 AuditAction.CREATE,
-                "Created order " + response.id(),
+                buildCreateOrderAuditTitle(response),
                 response.id(),
                 null,
                 response,
@@ -248,19 +248,50 @@ public class OrderService {
         return response;
     }
 
+    private String buildCreateOrderAuditTitle(OrderResponse response) {
+        String recipient = response.recipientName() == null ? "" : response.recipientName().trim();
+        List<String> itemNames = response.items().stream()
+                .map(OrderItemResponse::name)
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(name -> !name.isBlank())
+                .distinct()
+                .toList();
+
+        String itemPreview = itemNames.stream().limit(2).reduce((left, right) -> left + ", " + right).orElse("");
+        if (itemNames.size() > 2) {
+            itemPreview = itemPreview + " +" + (itemNames.size() - 2);
+        }
+
+        if (!recipient.isBlank() && !itemPreview.isBlank()) {
+            return "Created order for " + recipient + " (" + itemPreview + ")";
+        }
+        if (!recipient.isBlank()) {
+            return "Created order for " + recipient;
+        }
+        if (!itemPreview.isBlank()) {
+            return "Created order for " + itemPreview;
+        }
+        return "Created order";
+    }
+
     public List<OrderResponse> listMyOrders() {
         String userId = authService.currentUserId();
         return orderRepository.findByUserIdOrderByCreatedAtDesc(userId).stream().map(this::toResponse).toList();
     }
 
     public List<OrderResponse> listAll() {
-        return listAll(null, null, null);
+        return listAll(null, null, null, null);
     }
 
-    public List<OrderResponse> listAll(String status, Instant from, Instant to) {
+    public List<OrderResponse> listAll(String status, String buyerName, Instant from, Instant to) {
         OrderStatus statusFilter = parseOrderStatus(status);
+        String buyerNameFilter = buyerName == null ? "" : buyerName.trim().toLowerCase();
         return orderRepository.findAllByOrderByCreatedAtDesc().stream()
                 .filter(order -> statusFilter == null || order.getStatus() == statusFilter)
+                .filter(order -> buyerNameFilter.isBlank() || (
+                        order.getRecipientName() != null && order.getRecipientName().toLowerCase().contains(buyerNameFilter)
+                ))
                 .filter(order -> from == null || (order.getCreatedAt() != null && !order.getCreatedAt().isBefore(from)))
                 .filter(order -> to == null || (order.getCreatedAt() != null && !order.getCreatedAt().isAfter(to)))
                 .map(this::toResponse)
