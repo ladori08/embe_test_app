@@ -204,6 +204,7 @@ public class DatabaseConsoleService {
         if (targetDocument == null) {
             throw new ApiException(HttpStatus.NOT_FOUND, "Target document not found");
         }
+        String targetDocumentTitle = buildDocumentTitle(targetDocument, request.targetDocumentId());
 
         int applied = 0;
         for (DatabaseDependencyResolveOperationRequest operation : request.operations()) {
@@ -219,7 +220,17 @@ public class DatabaseConsoleService {
             if (changed) {
                 mongoTemplate.save(sourceDocument, collection);
                 Map<String, Object> afterSnapshot = toSerializableDocument(sourceDocument);
-                recordDependencyResolveAudit(collection, operation, beforeSnapshot, afterSnapshot, targetCollection, request.targetDocumentId());
+                String replacementDocumentTitle = resolveDocumentTitleForCollection(targetCollection, operation.replacementDocumentId());
+                recordDependencyResolveAudit(
+                        collection,
+                        operation,
+                        beforeSnapshot,
+                        afterSnapshot,
+                        targetCollection,
+                        request.targetDocumentId(),
+                        targetDocumentTitle,
+                        replacementDocumentTitle
+                );
                 applied++;
             }
         }
@@ -238,7 +249,9 @@ public class DatabaseConsoleService {
             Map<String, Object> beforeSnapshot,
             Map<String, Object> afterSnapshot,
             String targetCollection,
-            String targetDocumentId
+            String targetDocumentId,
+            String targetDocumentTitle,
+            String replacementDocumentTitle
     ) {
         AuditModule module = toAuditModule(sourceCollection);
         if (module == null) {
@@ -246,20 +259,24 @@ public class DatabaseConsoleService {
         }
 
         String entityId = extractSnapshotId(beforeSnapshot, operation.documentId());
+        String sourceTitle = buildSnapshotTitle(afterSnapshot, buildSnapshotTitle(beforeSnapshot, entityId));
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("sourceCollection", sourceCollection);
         metadata.put("fieldPath", operation.fieldPath());
         metadata.put("resolveAction", operation.action() == null ? "" : operation.action().name());
         metadata.put("targetCollection", targetCollection);
         metadata.put("targetDocumentId", targetDocumentId);
+        metadata.put("targetDocumentTitle", targetDocumentTitle);
+        metadata.put("sourceDocumentTitle", sourceTitle);
         if (operation.replacementDocumentId() != null && !operation.replacementDocumentId().isBlank()) {
             metadata.put("replacementDocumentId", operation.replacementDocumentId());
+            metadata.put("replacementDocumentTitle", replacementDocumentTitle == null ? "record" : replacementDocumentTitle);
         }
 
         auditLogService.record(
                 module,
                 AuditAction.UPDATE,
-                "Resolved dependency in " + sourceCollection + " (" + entityId + ")",
+                "Resolved dependency in " + sourceCollection + ": " + sourceTitle,
                 entityId,
                 beforeSnapshot,
                 afterSnapshot,
@@ -275,12 +292,15 @@ public class DatabaseConsoleService {
 
         Map<String, Object> beforeSnapshot = toSerializableDocument(deletedDocument);
         String entityId = extractSnapshotId(beforeSnapshot, stringifyScalar(deletedDocument.get("_id")));
-        Map<String, Object> metadata = Map.of("collection", collection);
+        String documentTitle = buildSnapshotTitle(beforeSnapshot, entityId);
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("collection", collection);
+        metadata.put("sourceDocumentTitle", documentTitle);
 
         auditLogService.record(
                 module,
                 AuditAction.DELETE,
-                "Deleted document from " + collection + " (" + entityId + ")",
+                "Deleted document from " + collection + ": " + documentTitle,
                 entityId,
                 beforeSnapshot,
                 null,
@@ -847,7 +867,7 @@ public class DatabaseConsoleService {
     }
 
     private String buildDocumentTitle(Document document, String fallbackId) {
-        List<String> candidateKeys = List.of("name", "title", "email", "sku", "ingredientCode", "lotCode", "productId", "recipeId");
+        List<String> candidateKeys = List.of("name", "title", "email", "sku", "ingredientCode", "lotCode");
         for (String key : candidateKeys) {
             Object value = document.get(key);
             if (value == null) {
@@ -861,7 +881,30 @@ public class DatabaseConsoleService {
         if (fallbackId == null || fallbackId.isBlank()) {
             return "Document";
         }
-        return "id: " + fallbackId;
+        return "record";
+    }
+
+    private String buildSnapshotTitle(Map<String, Object> snapshot, String fallbackId) {
+        if (snapshot == null || snapshot.isEmpty()) {
+            return fallbackId == null || fallbackId.isBlank() ? "record" : "record";
+        }
+        return buildDocumentTitle(new Document(snapshot), fallbackId);
+    }
+
+    private String resolveDocumentTitleForCollection(String collection, String documentId) {
+        if (documentId == null || documentId.isBlank()) {
+            return null;
+        }
+        try {
+            Object resolvedId = resolveDocumentId(documentId);
+            Document document = findDocumentByResolvedId(collection, resolvedId, documentId);
+            if (document == null) {
+                return null;
+            }
+            return buildDocumentTitle(document, documentId);
+        } catch (RuntimeException ignored) {
+            return null;
+        }
     }
 
     @SuppressWarnings("unchecked")
