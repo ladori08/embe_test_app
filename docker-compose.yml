@@ -34,6 +34,9 @@ services:
     environment:
       MONGODB_URI: mongodb://mongodb:27017/embe?replicaSet=rs0
       JWT_SECRET: 0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF
+      PRODUCT_IMAGE_STORAGE_DIR: /app/uploads/product-images
+    volumes:
+      - ./infra/uploads:/app/uploads
     ports:
       - "8080:8080"
 

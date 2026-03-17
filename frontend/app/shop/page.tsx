@@ -8,10 +8,12 @@ import { Doodle } from '@/components/doodle';
 import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CartDrawer } from '@/components/cart-drawer';
 import { useCart } from '@/components/cart-context';
 import { useI18n } from '@/components/language-context';
 import { api } from '@/lib/api';
+import { resolveProductImageUrl } from '@/lib/product-images';
 import { Product } from '@/lib/types';
 
 export default function ShopPage() {
@@ -21,6 +23,9 @@ export default function ShopPage() {
   const [stockWarning, setStockWarning] = useState('');
   const [cartOpen, setCartOpen] = useState(false);
   const [selectedQty, setSelectedQty] = useState<Record<string, number>>({});
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailProduct, setDetailProduct] = useState<Product | null>(null);
+  const [detailImageIndex, setDetailImageIndex] = useState(0);
   const { addItem, itemCount, items, stockByProductId } = useCart();
   const { t, moneyCompact } = useI18n();
 
@@ -34,6 +39,18 @@ export default function ShopPage() {
     const sourceStock = Number.isFinite(syncedStock) ? syncedStock : Number(product.currentStock);
     const currentStock = Number.isFinite(sourceStock) ? Math.max(0, Math.floor(sourceStock)) : 0;
     return Math.max(0, currentStock - getInCartQty(product.id));
+  };
+
+  const getProductImages = (product: Product) => {
+    if (!Array.isArray(product.images) || product.images.length === 0) {
+      return [];
+    }
+    return product.images.map(image => resolveProductImageUrl(image)).filter(Boolean);
+  };
+
+  const getPrimaryImage = (product: Product) => {
+    const images = getProductImages(product);
+    return images[0] || '';
   };
 
   const getSelectedQty = (productId: string, maxQty: number) => {
@@ -59,6 +76,20 @@ export default function ShopPage() {
     }));
   };
 
+  const openDetail = (product: Product) => {
+    setDetailProduct(product);
+    setDetailImageIndex(0);
+    setDetailOpen(true);
+  };
+
+  const closeDetail = (nextOpen: boolean) => {
+    setDetailOpen(nextOpen);
+    if (!nextOpen) {
+      setDetailProduct(null);
+      setDetailImageIndex(0);
+    }
+  };
+
   useEffect(() => {
     api
       .listPublicProducts()
@@ -66,6 +97,8 @@ export default function ShopPage() {
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
+
+  const detailImages = detailProduct ? getProductImages(detailProduct) : [];
 
   return (
     <>
@@ -106,7 +139,26 @@ export default function ShopPage() {
               const pickedQty = getSelectedQty(product.id, remainingStock);
 
               return (
-                <Card key={product.id} className="reveal">
+                <Card
+                  key={product.id}
+                  className="reveal cursor-pointer transition hover:-translate-y-0.5 hover:border-accent/40"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => openDetail(product)}
+                  onKeyDown={event => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      openDetail(product);
+                    }
+                  }}
+                >
+                  {getPrimaryImage(product) ? (
+                    <img src={getPrimaryImage(product)} alt={product.name} className="mb-3 aspect-[16/9] w-full rounded-xl border border-border object-cover" />
+                  ) : (
+                    <div className="mb-3 flex aspect-[16/9] w-full items-center justify-center rounded-xl border border-dashed border-border bg-[#f8f1e8] text-xs text-muted">
+                      {t('shop.imageEmpty')}
+                    </div>
+                  )}
                   <CardTitle>{product.name}</CardTitle>
                   <CardDescription>{product.category}</CardDescription>
                   <CardContent className="space-y-3">
@@ -114,7 +166,7 @@ export default function ShopPage() {
                       <span className="text-lg font-semibold">{moneyCompact(product.price)}</span>
                       <Badge>{t('shop.stock', { stock: remainingStock })}</Badge>
                     </div>
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between" onClick={event => event.stopPropagation()}>
                       <span className="text-sm text-muted">{t('shop.quantity')}</span>
                       <div className="flex items-center gap-2">
                         <Button
@@ -138,7 +190,7 @@ export default function ShopPage() {
                         </Button>
                       </div>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2" onClick={event => event.stopPropagation()}>
                       <Button
                         onClick={() => {
                           const result = addItem(product, pickedQty);
@@ -170,11 +222,6 @@ export default function ShopPage() {
                       >
                         {t('shop.quickAddOne')}
                       </Button>
-                      <Link className="flex-1" href={`/shop/product/${product.id}`}>
-                        <Button variant="outline" className="w-full">
-                          {t('shop.details')}
-                        </Button>
-                      </Link>
                     </div>
                   </CardContent>
                 </Card>
@@ -183,6 +230,125 @@ export default function ShopPage() {
           </div>
         </section>
       </main>
+      <Dialog open={detailOpen} onOpenChange={closeDetail}>
+        <DialogContent className="max-w-2xl">
+          {detailProduct ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>{detailProduct.name}</DialogTitle>
+              </DialogHeader>
+              {detailImages[detailImageIndex] || getPrimaryImage(detailProduct) ? (
+                <img
+                  src={detailImages[detailImageIndex] || getPrimaryImage(detailProduct)}
+                  alt={detailProduct.name}
+                  className="aspect-[16/9] w-full rounded-xl border border-border object-cover"
+                />
+              ) : (
+                <div className="flex aspect-[16/9] w-full items-center justify-center rounded-xl border border-dashed border-border bg-[#f8f1e8] text-sm text-muted">
+                  {t('shop.imageEmpty')}
+                </div>
+              )}
+              {detailImages.length > 1 ? (
+                <div className="mt-2 grid grid-cols-5 gap-2">
+                  {detailImages.map((imageUrl, index) => (
+                    <button
+                      key={`${imageUrl}-${index}`}
+                      type="button"
+                      className={`overflow-hidden rounded-lg border ${detailImageIndex === index ? 'border-accent' : 'border-border'}`}
+                      onClick={() => setDetailImageIndex(index)}
+                    >
+                      <img src={imageUrl} alt={`${detailProduct.name}-${index + 1}`} className="h-14 w-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <p className="text-sm text-muted">{detailProduct.category}</p>
+              <div className="mt-4 flex items-center gap-3">
+                <span className="text-xl font-semibold">{moneyCompact(detailProduct.price)}</span>
+                <Badge>{t('product.stock', { stock: getRemainingStock(detailProduct) })}</Badge>
+              </div>
+              <p className="mt-3 text-sm text-muted">{t('product.description')}</p>
+              <div className="mt-4 flex items-center gap-3">
+                <span className="text-sm text-muted">{t('shop.quantity')}</span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-9 w-9 px-0"
+                    onClick={() =>
+                      setQty(
+                        detailProduct.id,
+                        getSelectedQty(detailProduct.id, getRemainingStock(detailProduct)) - 1,
+                        getRemainingStock(detailProduct)
+                      )
+                    }
+                    disabled={getRemainingStock(detailProduct) <= 0 || getSelectedQty(detailProduct.id, getRemainingStock(detailProduct)) <= 1}
+                  >
+                    -
+                  </Button>
+                  <span className="w-10 text-center tabular-nums">{getSelectedQty(detailProduct.id, getRemainingStock(detailProduct))}</span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-9 w-9 px-0"
+                    onClick={() =>
+                      setQty(
+                        detailProduct.id,
+                        getSelectedQty(detailProduct.id, getRemainingStock(detailProduct)) + 1,
+                        getRemainingStock(detailProduct)
+                      )
+                    }
+                    disabled={
+                      getRemainingStock(detailProduct) <= 0 ||
+                      getSelectedQty(detailProduct.id, getRemainingStock(detailProduct)) >= getRemainingStock(detailProduct)
+                    }
+                  >
+                    +
+                  </Button>
+                </div>
+              </div>
+              <div className="mt-5 flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  onClick={() => {
+                    const qty = getSelectedQty(detailProduct.id, getRemainingStock(detailProduct));
+                    const result = addItem(detailProduct, qty);
+                    if (!result.ok) {
+                      setStockWarning(t('shop.insufficientStock', { name: detailProduct.name, available: result.available }));
+                      return;
+                    }
+                    setStockWarning('');
+                    setSelectedQty(prev => ({ ...prev, [detailProduct.id]: result.available > 0 ? 1 : 0 }));
+                  }}
+                  disabled={getRemainingStock(detailProduct) <= 0 || getSelectedQty(detailProduct.id, getRemainingStock(detailProduct)) <= 0}
+                >
+                  {t('shop.addToCart')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    const result = addItem(detailProduct, 1);
+                    if (!result.ok) {
+                      setStockWarning(t('shop.insufficientStock', { name: detailProduct.name, available: result.available }));
+                      return;
+                    }
+                    setStockWarning('');
+                  }}
+                  disabled={getRemainingStock(detailProduct) <= 0}
+                >
+                  {t('shop.quickAddOne')}
+                </Button>
+                <Link href="/shop/cart">
+                  <Button type="button" variant="outline">
+                    {t('product.viewCart')}
+                  </Button>
+                </Link>
+              </div>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
       <CartDrawer open={cartOpen} onOpenChange={setCartOpen} />
     </>
   );

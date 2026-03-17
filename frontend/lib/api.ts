@@ -142,6 +142,31 @@ export const api = {
   createProduct: (payload: Partial<Product>) => request<Product>('/api/admin/products', { method: 'POST', body: JSON.stringify(payload) }),
   updateProduct: (id: string, payload: Partial<Product>) => request<Product>(`/api/admin/products/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
   deleteProduct: (id: string) => request<void>(`/api/admin/products/${id}`, { method: 'DELETE' }),
+  uploadProductImage: async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${API_URL}/api/admin/products/images/upload`, {
+      method: 'POST',
+      credentials: 'include',
+      body: formData
+    });
+
+    if (!response.ok) {
+      let message = `Request failed (${response.status})`;
+      let details: unknown = null;
+      try {
+        const data = await response.json();
+        message = data.message || message;
+        details = data.details;
+      } catch {
+        // keep default
+      }
+      throw new ApiError(message, response.status, details);
+    }
+
+    return response.json() as Promise<{ fileName: string; path: string; url: string }>;
+  },
 
   listRecipes: () => request<Recipe[]>('/api/admin/recipes'),
   createRecipe: (payload: unknown) => request<Recipe>('/api/admin/recipes', { method: 'POST', body: JSON.stringify(payload) }),
