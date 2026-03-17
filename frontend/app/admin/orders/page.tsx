@@ -51,6 +51,7 @@ export default function AdminOrdersPage() {
   const [buyerNameFilter, setBuyerNameFilter] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
+  const [userLabelById, setUserLabelById] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const { t, money } = useI18n();
 
@@ -103,8 +104,28 @@ export default function AdminOrdersPage() {
     }
   };
 
+  const loadUsers = async () => {
+    try {
+      const users = await api.listUsersAdmin();
+      const nextUserLabelById: Record<string, string> = {};
+      users.forEach(user => {
+        const fullName = String(user.fullName || '').trim();
+        const email = String(user.email || '').trim();
+        nextUserLabelById[user.id] = fullName || email || user.id;
+      });
+      setUserLabelById(nextUserLabelById);
+    } catch {
+      setUserLabelById({});
+    }
+  };
+
+  const resolveUserLabel = (userId: string | null | undefined) => {
+    if (!userId) return t('admin.orders.guest');
+    return userLabelById[userId] || `${userId.slice(0, 6)}...`;
+  };
+
   useEffect(() => {
-    void load();
+    void Promise.all([load(), loadUsers()]);
   }, []);
 
   const updateStatus = async (id: string, status: OrderStatus) => {
@@ -191,7 +212,7 @@ export default function AdminOrdersPage() {
                       <TableRow key={order.id} className="cursor-pointer hover:bg-[#f8f1e8]/60" onClick={() => openDetail(order)}>
                         <TableCell>{order.id.slice(0, 8)}...</TableCell>
                         <TableCell>
-                          <div>{order.userId ? `${order.userId.slice(0, 6)}...` : t('admin.orders.guest')}</div>
+                          <div>{resolveUserLabel(order.userId)}</div>
                           <div className="text-xs text-muted">
                             {order.recipientName || '-'} · {order.recipientPhone || '-'}
                           </div>
@@ -258,7 +279,7 @@ export default function AdminOrdersPage() {
                     ) : null}
                     <p>
                       <strong>{t('admin.orders.user')}:</strong>{' '}
-                      {selectedOrder.userId ? `${selectedOrder.userId.slice(0, 6)}...` : t('admin.orders.guest')}
+                      {resolveUserLabel(selectedOrder.userId)}
                     </p>
                     <p>
                       <strong>{t('checkout.recipientName')}:</strong> {selectedOrder.recipientName || '-'}
