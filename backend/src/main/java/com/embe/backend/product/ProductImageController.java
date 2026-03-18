@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Duration;
+import java.util.List;
 
 @RestController
 public class ProductImageController {
@@ -21,6 +22,17 @@ public class ProductImageController {
     @PostMapping(value = "/api/admin/products/images/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ProductImageUploadResponse upload(@RequestPart("file") MultipartFile file) {
         return productImageStorageService.store(file);
+    }
+
+    @GetMapping("/api/admin/media/images")
+    public List<ProductMediaImageResponse> listImages() {
+        return productImageStorageService.listImages();
+    }
+
+    @DeleteMapping("/api/admin/media/images/{fileName:.+}")
+    public ResponseEntity<Void> deleteImage(@PathVariable String fileName) {
+        productImageStorageService.delete(fileName);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/api/uploads/product-images/{fileName:.+}")

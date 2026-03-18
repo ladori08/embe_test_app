@@ -16,9 +16,13 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.Instant;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 @Service
 public class ProductImageStorageService {
@@ -53,6 +57,31 @@ public class ProductImageStorageService {
 
         String path = PUBLIC_PATH_PREFIX + fileName;
         return new ProductImageUploadResponse(fileName, path, path);
+    }
+
+    public List<ProductMediaImageResponse> listImages() {
+        try (Stream<Path> files = Files.list(storageDir)) {
+            return files
+                    .filter(Files::isRegularFile)
+                    .map(this::toMediaImage)
+                    .flatMap(Optional::stream)
+                    .sorted(Comparator.comparing(ProductMediaImageResponse::lastModified).reversed())
+                    .toList();
+        } catch (IOException ex) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to load media images");
+        }
+    }
+
+    public void delete(String fileName) {
+        Path target = resolveTargetPath(sanitizeFileName(fileName));
+        if (!Files.exists(target) || !Files.isRegularFile(target)) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Image not found");
+        }
+        try {
+            Files.delete(target);
+        } catch (IOException ex) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to delete image");
+        }
     }
 
     public Resource loadAsResource(String fileName) {
@@ -119,5 +148,18 @@ public class ProductImageStorageService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Unsupported image extension: " + extension);
         }
         return extension;
+    }
+
+    private Optional<ProductMediaImageResponse> toMediaImage(Path filePath) {
+        String fileName = filePath.getFileName().toString();
+        try {
+            resolveExtension(fileName);
+            long sizeBytes = Files.size(filePath);
+            Instant lastModified = Files.getLastModifiedTime(filePath).toInstant();
+            String path = PUBLIC_PATH_PREFIX + fileName;
+            return Optional.of(new ProductMediaImageResponse(fileName, path, path, sizeBytes, lastModified));
+        } catch (Exception ignored) {
+            return Optional.empty();
+        }
     }
 }

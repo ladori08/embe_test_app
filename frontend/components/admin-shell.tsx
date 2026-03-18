@@ -51,6 +51,7 @@ export function AdminShell({ children, title }: { children: React.ReactNode; tit
     { href: '/admin/dashboard', label: t('admin.nav.dashboard') },
     { href: '/admin/ingredients', label: t('admin.nav.ingredients') },
     { href: '/admin/products', label: t('admin.nav.products') },
+    { href: '/admin/media', label: t('admin.nav.media') },
     { href: '/admin/users', label: t('admin.nav.users') },
     { href: '/admin/recipes', label: t('admin.nav.recipes') },
     { href: '/admin/production', label: t('admin.nav.production') },

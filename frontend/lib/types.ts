@@ -60,6 +60,14 @@ export interface Product {
   images?: string[];
 }
 
+export interface MediaImage {
+  fileName: string;
+  path: string;
+  url: string;
+  sizeBytes: number;
+  lastModified: string;
+}
+
 export interface ProductCategory {
   id: string;
   name: string;
