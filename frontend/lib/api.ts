@@ -22,6 +22,7 @@ import {
   DatabaseWipeResponse,
   DashboardData,
   Ingredient,
+  MediaImage,
   IngredientTransaction,
   Order,
   OrderStatusTimelineEntry,
@@ -167,6 +168,9 @@ export const api = {
 
     return response.json() as Promise<{ fileName: string; path: string; url: string }>;
   },
+  listMediaImages: () => request<MediaImage[]>('/api/admin/media/images'),
+  deleteMediaImage: (fileName: string) =>
+    request<void>(`/api/admin/media/images/${encodeURIComponent(fileName)}`, { method: 'DELETE' }),
 
   listRecipes: () => request<Recipe[]>('/api/admin/recipes'),
   createRecipe: (payload: unknown) => request<Recipe>('/api/admin/recipes', { method: 'POST', body: JSON.stringify(payload) }),

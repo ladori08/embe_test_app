@@ -14,7 +14,7 @@ import { Select } from '@/components/ui/select';
 import { useI18n } from '@/components/language-context';
 import { api } from '@/lib/api';
 import { resolveProductImageUrl } from '@/lib/product-images';
-import { Product, ProductCategory, ProductLot } from '@/lib/types';
+import { MediaImage, Product, ProductCategory, ProductLot } from '@/lib/types';
 
 const emptyForm = { name: '', sku: '', category: '', price: 0, currentStock: 0, isActive: true, images: [] as string[], regenerateSku: false };
 const ALL_CATEGORIES_FILTER = '__ALL_CATEGORIES__';
@@ -138,6 +138,12 @@ export default function AdminProductsPage() {
   const [lotsError, setLotsError] = useState<Record<string, string>>({});
   const [imageUploading, setImageUploading] = useState(false);
   const [imageUploadError, setImageUploadError] = useState('');
+  const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
+  const [mediaItems, setMediaItems] = useState<MediaImage[]>([]);
+  const [mediaLoading, setMediaLoading] = useState(false);
+  const [mediaError, setMediaError] = useState('');
+  const [mediaSearch, setMediaSearch] = useState('');
+  const [selectedMediaPaths, setSelectedMediaPaths] = useState<Record<string, boolean>>({});
   const [cropDialogOpen, setCropDialogOpen] = useState(false);
   const [cropProcessing, setCropProcessing] = useState(false);
   const [cropSourceFile, setCropSourceFile] = useState<File | null>(null);
@@ -257,6 +263,7 @@ export default function AdminProductsPage() {
     setEditing(null);
     setError('');
     setImageUploadError('');
+    setMediaError('');
     setOpen(true);
   };
 
@@ -268,12 +275,14 @@ export default function AdminProductsPage() {
     setEditing(item);
     setError('');
     setImageUploadError('');
+    setMediaError('');
     setOpen(true);
   };
 
   const closeProductModal = (nextOpen: boolean) => {
     if (!nextOpen) {
       resetCropState();
+      closeMediaPicker(false);
     }
     setOpen(nextOpen);
   };
@@ -284,6 +293,8 @@ export default function AdminProductsPage() {
     setForm(emptyForm);
     setError('');
     setImageUploadError('');
+    setMediaError('');
+    closeMediaPicker(false);
     setOpen(false);
   };
 
@@ -395,6 +406,52 @@ export default function AdminProductsPage() {
       const images = Array.isArray(prev.images) ? prev.images : [];
       return { ...prev, images: images.filter((_: string, imageIndex: number) => imageIndex !== index) };
     });
+  };
+
+  const loadMediaLibrary = async () => {
+    setMediaLoading(true);
+    try {
+      const rows = await api.listMediaImages();
+      setMediaItems(rows);
+      setMediaError('');
+    } catch (err) {
+      setMediaError(err instanceof Error ? err.message : t('admin.products.imageLibraryLoadFailed'));
+    } finally {
+      setMediaLoading(false);
+    }
+  };
+
+  const openMediaPicker = () => {
+    setSelectedMediaPaths({});
+    setMediaSearch('');
+    setMediaPickerOpen(true);
+    void loadMediaLibrary();
+  };
+
+  const closeMediaPicker = (nextOpen: boolean) => {
+    setMediaPickerOpen(nextOpen);
+    if (!nextOpen) {
+      setSelectedMediaPaths({});
+      setMediaSearch('');
+    }
+  };
+
+  const toggleMediaPath = (path: string) => {
+    setSelectedMediaPaths(prev => ({ ...prev, [path]: !prev[path] }));
+  };
+
+  const applySelectedMedia = () => {
+    const selectedPaths = Object.entries(selectedMediaPaths)
+      .filter(([, selected]) => selected)
+      .map(([path]) => path);
+    if (selectedPaths.length === 0) {
+      return;
+    }
+    setForm((prev: any) => ({
+      ...prev,
+      images: mergeImageUrls(Array.isArray(prev.images) ? prev.images : [], selectedPaths)
+    }));
+    closeMediaPicker(false);
   };
 
   const handleCategoryChange = (value: string) => {
@@ -583,6 +640,15 @@ export default function AdminProductsPage() {
   };
 
   const categoryOptions = [...categories];
+  const filteredMediaItems = useMemo(() => {
+    const query = mediaSearch.trim().toLowerCase();
+    if (!query) return mediaItems;
+    return mediaItems.filter(item => String(item.fileName || '').toLowerCase().includes(query));
+  }, [mediaItems, mediaSearch]);
+  const selectedMediaCount = useMemo(
+    () => Object.values(selectedMediaPaths).filter(Boolean).length,
+    [selectedMediaPaths]
+  );
   const categoryFilterOptions = useMemo(() => {
     const names = new Set<string>();
     items.forEach(item => {
@@ -828,6 +894,9 @@ export default function AdminProductsPage() {
                     <Button type="button" variant="outline" className="shrink-0" onClick={() => imageInputRef.current?.click()}>
                       {t('admin.products.imageAdd')}
                     </Button>
+                    <Button type="button" variant="outline" className="shrink-0" onClick={openMediaPicker}>
+                      {t('admin.products.imageLibrary')}
+                    </Button>
                     <p className="text-xs text-muted">
                       {imageUploading
                         ? t('admin.products.imageUploading')
@@ -878,6 +947,79 @@ export default function AdminProductsPage() {
                   <Button>{t('common.save')}</Button>
                 </div>
               </form>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={mediaPickerOpen} onOpenChange={closeMediaPicker}>
+            <DialogContent className="max-w-4xl">
+              <DialogHeader>
+                <DialogTitle>{t('admin.products.imageLibraryTitle')}</DialogTitle>
+              </DialogHeader>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Input
+                  value={mediaSearch}
+                  onChange={event => setMediaSearch(event.target.value)}
+                  placeholder={t('admin.products.imageLibrarySearch')}
+                  className="min-w-[220px] sm:max-w-[320px]"
+                />
+                <div className="flex items-center gap-2">
+                  <Button type="button" variant="outline" onClick={() => void loadMediaLibrary()} disabled={mediaLoading}>
+                    {t('admin.products.imageLibraryRefresh')}
+                  </Button>
+                  <span className="text-xs text-muted">{t('admin.products.imageLibrarySelected', { count: selectedMediaCount })}</span>
+                </div>
+              </div>
+              <div className="mt-2 max-h-[58vh] overflow-auto rounded-xl border border-border bg-cream p-3">
+                {mediaLoading ? (
+                  <p className="text-sm text-muted">{t('admin.products.imageLibraryLoading')}</p>
+                ) : mediaError ? (
+                  <p className="text-sm text-red-600">{mediaError}</p>
+                ) : filteredMediaItems.length === 0 ? (
+                  <p className="text-sm text-muted">{t('admin.products.imageLibraryEmpty')}</p>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {filteredMediaItems.map(item => {
+                      const selected = !!selectedMediaPaths[item.path];
+                      return (
+                        <button
+                          key={item.fileName}
+                          type="button"
+                          className={`rounded-xl border p-2 text-left transition ${
+                            selected ? 'border-accent bg-[#fff7ef]' : 'border-border bg-white hover:border-accent/60'
+                          }`}
+                          onClick={() => toggleMediaPath(item.path)}
+                        >
+                          <img
+                            src={resolveProductImageUrl(item.url)}
+                            alt={item.fileName}
+                            className="aspect-[16/9] w-full rounded-lg border border-border object-cover"
+                            onError={event => {
+                              event.currentTarget.style.display = 'none';
+                            }}
+                          />
+                          <div className="mt-2 flex items-center justify-between gap-2">
+                            <p className="truncate text-xs font-semibold text-ink" title={item.fileName}>
+                              {item.fileName}
+                            </p>
+                            <span className="text-xs text-muted">{selected ? '✓' : ''}</span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                <Button type="button" variant="ghost" onClick={() => closeMediaPicker(false)}>
+                  {t('common.close')}
+                </Button>
+                <Button type="button" variant="outline" onClick={() => closeMediaPicker(false)}>
+                  {t('common.cancel')}
+                </Button>
+                <Button type="button" onClick={applySelectedMedia} disabled={selectedMediaCount === 0}>
+                  {t('admin.products.imageLibraryApply')}
+                </Button>
+              </div>
             </DialogContent>
           </Dialog>
 
