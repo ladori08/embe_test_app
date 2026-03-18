@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ShoppingBag } from 'lucide-react';
 import { TopNav } from '@/components/top-nav';
 import { Doodle } from '@/components/doodle';
@@ -26,8 +26,24 @@ export default function ShopPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
   const [detailImageIndex, setDetailImageIndex] = useState(0);
+  const [addedPreviewOpen, setAddedPreviewOpen] = useState(false);
+  const [addedPreviewVisible, setAddedPreviewVisible] = useState(false);
+  const [addedPreview, setAddedPreview] = useState<{ product: Product; qty: number } | null>(null);
+  const addedPreviewHideTimerRef = useRef<number | null>(null);
+  const addedPreviewCloseTimerRef = useRef<number | null>(null);
   const { addItem, itemCount, items, stockByProductId } = useCart();
   const { t, moneyCompact } = useI18n();
+
+  const clearAddedPreviewTimers = () => {
+    if (addedPreviewHideTimerRef.current !== null) {
+      window.clearTimeout(addedPreviewHideTimerRef.current);
+      addedPreviewHideTimerRef.current = null;
+    }
+    if (addedPreviewCloseTimerRef.current !== null) {
+      window.clearTimeout(addedPreviewCloseTimerRef.current);
+      addedPreviewCloseTimerRef.current = null;
+    }
+  };
 
   const getInCartQty = (productId: string) => {
     const item = items.find(cartItem => cartItem.productId === productId);
@@ -98,7 +114,38 @@ export default function ShopPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    return () => {
+      clearAddedPreviewTimers();
+    };
+  }, []);
+
   const detailImages = detailProduct ? getProductImages(detailProduct) : [];
+
+  const addProductToCart = (product: Product, qty: number, resetPickedQty: boolean) => {
+    const result = addItem(product, qty);
+    if (!result.ok) {
+      setStockWarning(t('shop.insufficientStock', { name: product.name, available: result.available }));
+      return;
+    }
+    setStockWarning('');
+    if (resetPickedQty) {
+      setSelectedQty(prev => ({ ...prev, [product.id]: result.available > 0 ? 1 : 0 }));
+    }
+    clearAddedPreviewTimers();
+    setAddedPreview({ product, qty });
+    setAddedPreviewOpen(true);
+    setAddedPreviewVisible(false);
+    window.requestAnimationFrame(() => setAddedPreviewVisible(true));
+    addedPreviewHideTimerRef.current = window.setTimeout(() => {
+      setAddedPreviewVisible(false);
+    }, 2600);
+    addedPreviewCloseTimerRef.current = window.setTimeout(() => {
+      setAddedPreviewOpen(false);
+      setAddedPreview(null);
+      clearAddedPreviewTimers();
+    }, 3000);
+  };
 
   return (
     <>
@@ -192,15 +239,7 @@ export default function ShopPage() {
                     </div>
                     <div className="flex gap-2" onClick={event => event.stopPropagation()}>
                       <Button
-                        onClick={() => {
-                          const result = addItem(product, pickedQty);
-                          if (!result.ok) {
-                            setStockWarning(t('shop.insufficientStock', { name: product.name, available: result.available }));
-                            return;
-                          }
-                          setStockWarning('');
-                          setSelectedQty(prev => ({ ...prev, [product.id]: result.available > 0 ? 1 : 0 }));
-                        }}
+                        onClick={() => addProductToCart(product, pickedQty, true)}
                         className="flex-1"
                         disabled={remainingStock <= 0 || pickedQty <= 0}
                       >
@@ -210,14 +249,7 @@ export default function ShopPage() {
                         type="button"
                         variant="outline"
                         className="px-3"
-                        onClick={() => {
-                          const result = addItem(product, 1);
-                          if (!result.ok) {
-                            setStockWarning(t('shop.insufficientStock', { name: product.name, available: result.available }));
-                            return;
-                          }
-                          setStockWarning('');
-                        }}
+                        onClick={() => addProductToCart(product, 1, false)}
                         disabled={remainingStock <= 0}
                       >
                         {t('shop.quickAddOne')}
@@ -310,16 +342,7 @@ export default function ShopPage() {
               <div className="mt-5 flex flex-wrap gap-2">
                 <Button
                   type="button"
-                  onClick={() => {
-                    const qty = getSelectedQty(detailProduct.id, getRemainingStock(detailProduct));
-                    const result = addItem(detailProduct, qty);
-                    if (!result.ok) {
-                      setStockWarning(t('shop.insufficientStock', { name: detailProduct.name, available: result.available }));
-                      return;
-                    }
-                    setStockWarning('');
-                    setSelectedQty(prev => ({ ...prev, [detailProduct.id]: result.available > 0 ? 1 : 0 }));
-                  }}
+                  onClick={() => addProductToCart(detailProduct, getSelectedQty(detailProduct.id, getRemainingStock(detailProduct)), true)}
                   disabled={getRemainingStock(detailProduct) <= 0 || getSelectedQty(detailProduct.id, getRemainingStock(detailProduct)) <= 0}
                 >
                   {t('shop.addToCart')}
@@ -327,14 +350,7 @@ export default function ShopPage() {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => {
-                    const result = addItem(detailProduct, 1);
-                    if (!result.ok) {
-                      setStockWarning(t('shop.insufficientStock', { name: detailProduct.name, available: result.available }));
-                      return;
-                    }
-                    setStockWarning('');
-                  }}
+                  onClick={() => addProductToCart(detailProduct, 1, false)}
                   disabled={getRemainingStock(detailProduct) <= 0}
                 >
                   {t('shop.quickAddOne')}
@@ -349,6 +365,39 @@ export default function ShopPage() {
           ) : null}
         </DialogContent>
       </Dialog>
+      {addedPreviewOpen && addedPreview ? (
+        <div
+          className={`pointer-events-none fixed left-1/2 top-2 z-[70] w-[min(92vw,440px)] -translate-x-1/2 transform transition-all duration-300 ${
+            addedPreviewVisible ? 'translate-y-0 opacity-100' : '-translate-y-6 opacity-0'
+          }`}
+        >
+          <div className="rounded-2xl border border-border bg-white p-3 shadow-card">
+            <p className="mb-2 text-sm font-semibold text-ink">{t('shop.addedPopupTitle')}</p>
+            <div className="flex items-center gap-3 rounded-xl border border-border bg-[#fffaf4] p-3">
+              {getPrimaryImage(addedPreview.product) ? (
+                <img
+                  src={getPrimaryImage(addedPreview.product)}
+                  alt={addedPreview.product.name}
+                  className="h-14 w-14 rounded-lg border border-border object-cover"
+                />
+              ) : (
+                <div className="flex h-14 w-14 items-center justify-center rounded-lg border border-dashed border-border bg-[#f8f1e8] text-[11px] text-muted">
+                  {t('shop.imageEmpty')}
+                </div>
+              )}
+              <div className="min-w-0 flex-1 space-y-1 text-sm">
+                <p className="truncate font-semibold">{addedPreview.product.name}</p>
+                <p className="text-muted">
+                  {t('shop.addedPopupUnitPrice')}: {moneyCompact(addedPreview.product.price)}
+                </p>
+                <p className="text-muted">
+                  {t('shop.addedPopupQty')}: {addedPreview.qty}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <CartDrawer open={cartOpen} onOpenChange={setCartOpen} />
     </>
   );

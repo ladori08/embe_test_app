@@ -11,9 +11,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input';
 import { ApiError, api } from '@/lib/api';
 import { useI18n } from '@/components/language-context';
+import { PaymentMethod } from '@/lib/types';
 
 const CHECKOUT_INFO_STORAGE_KEY = 'embe-checkout-delivery-info';
-const CHECKOUT_HOLD_DEADLINE_STORAGE_KEY = 'embe-checkout-hold-deadline';
 const CHECKOUT_HOLD_WINDOW_MS = 30 * 60 * 1000;
 
 interface StockAdjustmentDetail {
@@ -40,11 +40,14 @@ export default function CheckoutPage() {
   const [recipientName, setRecipientName] = useState('');
   const [recipientPhone, setRecipientPhone] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState('');
+  const [deliveryDate, setDeliveryDate] = useState('');
+  const [deliveryTime, setDeliveryTime] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('COD_DEPOSIT');
   const [note, setNote] = useState('');
   const [message, setMessage] = useState('');
   const [errorPopupMessage, setErrorPopupMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [holdDeadline, setHoldDeadline] = useState<number | null>(null);
+  const [placedHoldDeadline, setPlacedHoldDeadline] = useState<number | null>(null);
   const [nowTs, setNowTs] = useState(() => Date.now());
   const hasRealtimeStockConflict = items.some(item => item.qty > item.maxQty);
 
@@ -54,29 +57,11 @@ export default function CheckoutPage() {
   };
 
   useEffect(() => {
-    const now = Date.now();
-    const raw = window.localStorage.getItem(CHECKOUT_HOLD_DEADLINE_STORAGE_KEY);
-    const parsed = raw ? Number(raw) : NaN;
-    const nextDeadline = Number.isFinite(parsed) && parsed > now ? parsed : now + CHECKOUT_HOLD_WINDOW_MS;
-    window.localStorage.setItem(CHECKOUT_HOLD_DEADLINE_STORAGE_KEY, String(nextDeadline));
-    setHoldDeadline(nextDeadline);
-  }, []);
-
-  useEffect(() => {
     const timer = window.setInterval(() => {
       setNowTs(Date.now());
     }, 1000);
     return () => window.clearInterval(timer);
   }, []);
-
-  useEffect(() => {
-    if (!holdDeadline || holdDeadline > nowTs) {
-      return;
-    }
-    const nextDeadline = nowTs + CHECKOUT_HOLD_WINDOW_MS;
-    window.localStorage.setItem(CHECKOUT_HOLD_DEADLINE_STORAGE_KEY, String(nextDeadline));
-    setHoldDeadline(nextDeadline);
-  }, [holdDeadline, nowTs]);
 
   useEffect(() => {
     try {
@@ -88,6 +73,8 @@ export default function CheckoutPage() {
         recipientName?: string;
         recipientPhone?: string;
         deliveryAddress?: string;
+        deliveryDate?: string;
+        deliveryTime?: string;
       };
       if (parsed.recipientName) {
         setRecipientName(parsed.recipientName);
@@ -97,6 +84,12 @@ export default function CheckoutPage() {
       }
       if (parsed.deliveryAddress) {
         setDeliveryAddress(parsed.deliveryAddress);
+      }
+      if (parsed.deliveryDate) {
+        setDeliveryDate(parsed.deliveryDate);
+      }
+      if (parsed.deliveryTime) {
+        setDeliveryTime(parsed.deliveryTime);
       }
     } catch {
       // ignore malformed local cache
@@ -115,10 +108,12 @@ export default function CheckoutPage() {
       JSON.stringify({
         recipientName: recipientName.trim(),
         recipientPhone: recipientPhone.trim(),
-        deliveryAddress: deliveryAddress.trim()
+        deliveryAddress: deliveryAddress.trim(),
+        deliveryDate: deliveryDate.trim(),
+        deliveryTime: deliveryTime.trim()
       })
     );
-  }, [recipientName, recipientPhone, deliveryAddress]);
+  }, [recipientName, recipientPhone, deliveryAddress, deliveryDate, deliveryTime]);
 
   const onPlaceOrder = async () => {
     setErrorPopupMessage('');
@@ -150,6 +145,8 @@ export default function CheckoutPage() {
     const cleanName = recipientName.trim();
     const cleanPhone = recipientPhone.trim();
     const cleanAddress = deliveryAddress.trim();
+    const cleanDeliveryDate = deliveryDate.trim();
+    const cleanDeliveryTime = deliveryTime.trim();
     const cleanNote = note.trim();
 
     if (!cleanName) {
@@ -168,18 +165,33 @@ export default function CheckoutPage() {
       showErrorPopup(t('checkout.requiredDeliveryAddress'));
       return;
     }
+    if (!cleanDeliveryDate) {
+      showErrorPopup(t('checkout.requiredDeliveryDate'));
+      return;
+    }
+    if (!cleanDeliveryTime) {
+      showErrorPopup(t('checkout.requiredDeliveryTime'));
+      return;
+    }
 
     setSubmitting(true);
     try {
-      await api.createOrder({
+      const createdOrder = await api.createOrder({
         items: items.map(item => ({ productId: item.productId, qty: item.qty })),
         recipientName: cleanName,
         recipientPhone: cleanPhone,
         deliveryAddress: cleanAddress,
+        deliveryDate: cleanDeliveryDate,
+        deliveryTime: cleanDeliveryTime,
+        paymentMethod,
         note: cleanNote || null
       }, idempotencyKeyRef.current);
       clear();
       setNote('');
+      const nextHoldDeadline = createdOrder.holdExpiresAt
+        ? new Date(createdOrder.holdExpiresAt).getTime()
+        : Date.now() + CHECKOUT_HOLD_WINDOW_MS;
+      setPlacedHoldDeadline(nextHoldDeadline);
       setMessage(t('checkout.success'));
       idempotencyKeyRef.current =
         typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
@@ -210,20 +222,35 @@ export default function CheckoutPage() {
     }
   };
 
-  const holdRemainingSeconds = holdDeadline
-    ? Math.max(0, Math.ceil((holdDeadline - nowTs) / 1000))
+  const holdRemainingSeconds = placedHoldDeadline
+    ? Math.max(0, Math.ceil((placedHoldDeadline - nowTs) / 1000))
     : Math.floor(CHECKOUT_HOLD_WINDOW_MS / 1000);
   const holdMinutes = String(Math.floor(holdRemainingSeconds / 60)).padStart(2, '0');
   const holdSeconds = String(holdRemainingSeconds % 60).padStart(2, '0');
   const holdCountdown = `${holdMinutes}:${holdSeconds}`;
+  const today = new Date();
+  const todayText = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const showPickupDateHint = !deliveryDate || deliveryDate === todayText;
+  const depositAmount = paymentMethod === 'COD_DEPOSIT' ? subtotal * 0.5 : 0;
 
   return (
     <>
       <TopNav />
       <main className="mx-auto max-w-3xl px-4 py-8">
         <h1 className="mb-4 text-3xl font-script">{t('checkout.title')}</h1>
-        {message && <p className="mb-3 text-sm text-green-700">{message}</p>}
-        {items.length === 0 ? (
+        {message ? (
+          <Card className="space-y-4">
+            <p className="text-sm text-green-700">{message}</p>
+            <p className="rounded-2xl border border-[#f2c79f] bg-[#fff1dd] px-4 py-3 text-sm font-medium leading-relaxed text-[#8b4d1f]">
+              {t('checkout.holdNoticeWithTimer', { time: holdCountdown })}
+            </p>
+            <Link href="/shop" className="w-full">
+              <Button type="button" className="w-full">
+                {t('cart.backToShop')}
+              </Button>
+            </Link>
+          </Card>
+        ) : items.length === 0 ? (
           <Card>{t('checkout.empty')}</Card>
         ) : (
           <Card className="space-y-4">
@@ -234,10 +261,11 @@ export default function CheckoutPage() {
               </div>
             ))}
             <div className="space-y-3 border-t border-border pt-3">
+              <div className="rounded-2xl border border-[#f2c79f] bg-[#fff1dd] px-4 py-3 text-sm leading-relaxed text-[#8b4d1f]">
+                <p>{t('shop.preorderNotePrimary')}</p>
+                <p className="mt-2">{t('shop.preorderNoteSecondary')}</p>
+              </div>
               <p className="text-sm font-medium text-ink">{t('checkout.deliveryInfo')}</p>
-              <p className="rounded-2xl border border-[#f2c79f] bg-[#fff1dd] px-4 py-3 text-sm font-medium leading-relaxed text-[#8b4d1f]">
-                {t('checkout.holdNoticeWithTimer', { time: holdCountdown })}
-              </p>
               <div>
                 <label className="mb-1 block text-sm text-muted">{t('checkout.recipientName')}</label>
                 <Input value={recipientName} onChange={e => setRecipientName(e.target.value)} />
@@ -249,6 +277,62 @@ export default function CheckoutPage() {
               <div>
                 <label className="mb-1 block text-sm text-muted">{t('checkout.deliveryAddress')}</label>
                 <Input value={deliveryAddress} onChange={e => setDeliveryAddress(e.target.value)} />
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm text-muted">{t('checkout.deliveryDate')}</label>
+                  <Input
+                    type="date"
+                    min={todayText}
+                    value={deliveryDate}
+                    onChange={e => setDeliveryDate(e.target.value)}
+                    onKeyDown={event => event.preventDefault()}
+                    onPaste={event => event.preventDefault()}
+                    onDrop={event => event.preventDefault()}
+                    onClick={event => {
+                      const dateInput = event.currentTarget as HTMLInputElement & { showPicker?: () => void };
+                      dateInput.showPicker?.();
+                    }}
+                    onFocus={event => {
+                      const dateInput = event.currentTarget as HTMLInputElement & { showPicker?: () => void };
+                      dateInput.showPicker?.();
+                    }}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm text-muted">{t('checkout.deliveryTime')}</label>
+                  <Input type="time" value={deliveryTime} onChange={e => setDeliveryTime(e.target.value)} />
+                </div>
+              </div>
+              {showPickupDateHint ? (
+                <p className="rounded-xl border border-[#f2c79f] bg-[#fff8f0] px-3 py-2 text-xs leading-relaxed text-[#8b4d1f]">
+                  {t('checkout.pickupDateHint')}
+                </p>
+              ) : null}
+              <div>
+                <p className="mb-1 block text-sm text-muted">{t('checkout.paymentMethod')}</p>
+                <div className="space-y-2">
+                  <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm">
+                    <input
+                      type="radio"
+                      name="paymentMethod"
+                      value="COD_DEPOSIT"
+                      checked={paymentMethod === 'COD_DEPOSIT'}
+                      onChange={() => setPaymentMethod('COD_DEPOSIT')}
+                    />
+                    <span>{t('checkout.paymentCodDeposit')}</span>
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm">
+                    <input
+                      type="radio"
+                      name="paymentMethod"
+                      value="BANK_TRANSFER"
+                      checked={paymentMethod === 'BANK_TRANSFER'}
+                      onChange={() => setPaymentMethod('BANK_TRANSFER')}
+                    />
+                    <span>{t('checkout.paymentBankTransfer')}</span>
+                  </label>
+                </div>
               </div>
               <div>
                 <label className="mb-1 block text-sm text-muted">{t('checkout.note')}</label>
@@ -263,6 +347,15 @@ export default function CheckoutPage() {
               <span className="text-muted">{t('common.subtotal')}</span>
               <span>{money(subtotal)}</span>
             </div>
+            {paymentMethod === 'COD_DEPOSIT' ? (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted">{t('checkout.depositAmount')}</span>
+                <span>{money(depositAmount)}</span>
+              </div>
+            ) : null}
+            <p className="rounded-xl border border-[#f2c79f] bg-[#fff8f0] px-3 py-2 text-xs leading-relaxed text-[#8b4d1f]">
+              {t('checkout.shippingFeeNotice')}
+            </p>
             <div className="flex items-center justify-between text-base font-semibold">
               <span>{t('common.total')}</span>
               <span>{money(subtotal)}</span>

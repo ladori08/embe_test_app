@@ -18,6 +18,10 @@ export function CartDrawer({ open, onOpenChange }: { open: boolean; onOpenChange
         <SheetHeader>
           <SheetTitle>{t('drawer.title')}</SheetTitle>
         </SheetHeader>
+        <div className="rounded-xl border border-[#f2c79f] bg-[#fff1dd] px-3 py-2 text-xs leading-relaxed text-[#8b4d1f]">
+          <p>{t('shop.preorderNotePrimary')}</p>
+          <p className="mt-2">{t('shop.preorderNoteSecondary')}</p>
+        </div>
         <div className="space-y-3">
           {items.length === 0 && <p className="rounded-xl bg-[#f8f1e8] p-3 text-sm text-muted">{t('drawer.empty')}</p>}
           {items.map(item => (
