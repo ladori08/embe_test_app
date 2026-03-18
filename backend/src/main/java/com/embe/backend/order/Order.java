@@ -29,6 +29,12 @@ public class Order {
 
     private String deliveryAddress;
 
+    private String deliveryDate;
+
+    private String deliveryTime;
+
+    private PaymentMethod paymentMethod;
+
     private String note;
 
     @Indexed(unique = true, sparse = true)
@@ -117,6 +123,30 @@ public class Order {
 
     public void setNote(String note) {
         this.note = note;
+    }
+
+    public String getDeliveryDate() {
+        return deliveryDate;
+    }
+
+    public void setDeliveryDate(String deliveryDate) {
+        this.deliveryDate = deliveryDate;
+    }
+
+    public String getDeliveryTime() {
+        return deliveryTime;
+    }
+
+    public void setDeliveryTime(String deliveryTime) {
+        this.deliveryTime = deliveryTime;
+    }
+
+    public PaymentMethod getPaymentMethod() {
+        return paymentMethod;
+    }
+
+    public void setPaymentMethod(PaymentMethod paymentMethod) {
+        this.paymentMethod = paymentMethod;
     }
 
     public String getIdempotencyKey() {

@@ -26,6 +26,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -108,6 +111,9 @@ public class OrderService {
         String recipientName = sanitizeRequiredText(request.recipientName(), "Recipient name is required");
         String recipientPhone = sanitizeRequiredText(request.recipientPhone(), "Recipient phone is required");
         String deliveryAddress = sanitizeRequiredText(request.deliveryAddress(), "Delivery address is required");
+        String deliveryDate = sanitizeRequiredText(request.deliveryDate(), "Delivery date is required");
+        String deliveryTime = sanitizeRequiredText(request.deliveryTime(), "Delivery time is required");
+        PaymentMethod paymentMethod = request.paymentMethod();
         String note = sanitizeOptionalText(request.note());
         String idempotencyKey = sanitizeIdempotencyKey(rawIdempotencyKey);
 
@@ -135,6 +141,19 @@ public class OrderService {
                     HttpStatus.BAD_REQUEST,
                     "Delivery address must be " + DELIVERY_ADDRESS_MIN_LENGTH + "-" + DELIVERY_ADDRESS_MAX_LENGTH + " characters"
             );
+        }
+        try {
+            LocalDate.parse(deliveryDate);
+        } catch (DateTimeParseException ex) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Delivery date must be in YYYY-MM-DD format");
+        }
+        try {
+            LocalTime.parse(deliveryTime);
+        } catch (DateTimeParseException ex) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Delivery time must be in HH:mm format");
+        }
+        if (paymentMethod == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Payment method is required");
         }
         if (note != null && note.length() > NOTE_MAX_LENGTH) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Note must be at most " + NOTE_MAX_LENGTH + " characters");
@@ -205,6 +224,9 @@ public class OrderService {
         order.setRecipientName(recipientName);
         order.setRecipientPhone(recipientPhone);
         order.setDeliveryAddress(deliveryAddress);
+        order.setDeliveryDate(deliveryDate);
+        order.setDeliveryTime(deliveryTime);
+        order.setPaymentMethod(paymentMethod);
         order.setNote(note);
         order.setIdempotencyKey(idempotencyKey);
         order.setSubtotal(subtotal);
@@ -466,6 +488,9 @@ public class OrderService {
                 order.getRecipientName(),
                 order.getRecipientPhone(),
                 order.getDeliveryAddress(),
+                order.getDeliveryDate(),
+                order.getDeliveryTime(),
+                order.getPaymentMethod(),
                 order.getNote(),
                 order.getSubtotal(),
                 order.getTax(),

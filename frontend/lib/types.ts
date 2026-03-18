@@ -148,6 +148,7 @@ export interface BakeRecord {
 }
 
 export type OrderStatus = 'NEW' | 'CONFIRMED' | 'PAID' | 'CANCELLED' | 'COMPLETED';
+export type PaymentMethod = 'COD_DEPOSIT' | 'BANK_TRANSFER';
 
 export interface OrderItem {
   productId: string;
@@ -164,6 +165,9 @@ export interface Order {
   recipientName?: string | null;
   recipientPhone?: string | null;
   deliveryAddress?: string | null;
+  deliveryDate?: string | null;
+  deliveryTime?: string | null;
+  paymentMethod?: PaymentMethod | null;
   note?: string | null;
   subtotal: number;
   tax: number;

@@ -290,6 +290,20 @@ export default function AdminOrdersPage() {
                     <p className="sm:col-span-2">
                       <strong>{t('checkout.deliveryAddress')}:</strong> {selectedOrder.deliveryAddress || '-'}
                     </p>
+                    <p>
+                      <strong>{t('checkout.deliveryDate')}:</strong> {selectedOrder.deliveryDate || '-'}
+                    </p>
+                    <p>
+                      <strong>{t('checkout.deliveryTime')}:</strong> {selectedOrder.deliveryTime || '-'}
+                    </p>
+                    <p className="sm:col-span-2">
+                      <strong>{t('checkout.paymentMethod')}:</strong>{' '}
+                      {selectedOrder.paymentMethod === 'COD_DEPOSIT'
+                        ? t('checkout.paymentCodDeposit')
+                        : selectedOrder.paymentMethod === 'BANK_TRANSFER'
+                          ? t('checkout.paymentBankTransfer')
+                          : '-'}
+                    </p>
                     <p className="sm:col-span-2">
                       <strong>{t('checkout.note')}:</strong> {selectedOrder.note || '-'}
                     </p>
@@ -351,6 +365,12 @@ export default function AdminOrdersPage() {
                       <span className="text-muted">{t('common.subtotal')}</span>
                       <span>{money(selectedOrder.subtotal)}</span>
                     </div>
+                    {selectedOrder.paymentMethod === 'COD_DEPOSIT' ? (
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted">{t('checkout.depositAmount')}</span>
+                        <span>{money(selectedOrder.total * 0.5)}</span>
+                      </div>
+                    ) : null}
                     {selectedOrder.tax > 0 ? (
                       <div className="flex items-center justify-between">
                         <span className="text-muted">{t('checkout.tax')}</span>
