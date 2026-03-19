@@ -57,9 +57,7 @@ export function TopNav() {
                 {t('nav.logout')}
               </Button>
             </>
-          ) : (
-            <Button onClick={() => router.push('/login')}>{t('nav.login')}</Button>
-          )}
+          ) : null}
         </nav>
       </div>
     </header>
