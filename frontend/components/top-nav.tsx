@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -7,10 +8,13 @@ import { useAuth } from '@/components/auth-context';
 import { useI18n } from '@/components/language-context';
 import { hasRole } from '@/lib/permissions';
 
+const STORE_LOGO_URL = 'http://localhost:8080/api/uploads/product-images/1773919296983-6193e106c6b846f487e5f4692515523c.png';
+
 export function TopNav() {
   const { user, logout } = useAuth();
   const { locale, setLocale, t } = useI18n();
   const router = useRouter();
+  const [logoError, setLogoError] = useState(false);
 
   const onLogout = async () => {
     await logout();
@@ -20,8 +24,17 @@ export function TopNav() {
   return (
     <header className="sticky top-0 z-20 border-b border-border/70 bg-background/90 backdrop-blur">
       <div className="mx-auto flex w-full items-center justify-between px-3 py-3 sm:px-4 xl:px-6 2xl:px-8">
-        <Link href="/shop" className="text-2xl font-script text-ink">
-          Embé Bakery
+        <Link href="/shop" className="flex items-center">
+          {logoError ? (
+            <span className="text-2xl font-script text-ink">Embé Bakery</span>
+          ) : (
+            <img
+              src={STORE_LOGO_URL}
+              alt="Embé Bakery"
+              className="h-10 w-auto max-w-[220px] object-contain sm:h-11"
+              onError={() => setLogoError(true)}
+            />
+          )}
         </Link>
         <nav className="flex items-center gap-2">
           <Link href="/shop" className="px-3 py-2 text-sm text-muted hover:text-ink">
