@@ -26,11 +26,11 @@ export function TopNav() {
       <div className="mx-auto flex w-full items-center justify-between px-3 py-3 sm:px-4 xl:px-6 2xl:px-8">
         <Link href="/shop" className="flex items-center">
           {logoError ? (
-            <span className="text-2xl font-script text-ink">Embé Bakery</span>
+            <span className="text-2xl font-script text-ink">embé.bakery</span>
           ) : (
             <img
               src={STORE_LOGO_URL}
-              alt="Embé Bakery"
+              alt="embé.bakery"
               className="h-10 w-auto max-w-[220px] object-contain sm:h-11"
               onError={() => setLogoError(true)}
             />
