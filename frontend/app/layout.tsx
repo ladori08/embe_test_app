@@ -4,7 +4,7 @@ import { AppProviders } from '@/components/providers';
 
 export const metadata: Metadata = {
   title: 'Embe Bakery & Cafe',
-  description: 'Embé storefront and admin panel'
+  description: 'embé storefront and admin panel'
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -10,6 +10,6 @@ public class OpenApiConfig {
 
     @Bean
     public OpenAPI openAPI() {
-        return new OpenAPI().info(new Info().title("Embe API").version("1.0.0").description("Embé Bakery and Cafe backend APIs"));
+        return new OpenAPI().info(new Info().title("Embe API").version("1.0.0").description("embé.bakery and Cafe backend APIs"));
     }
 }

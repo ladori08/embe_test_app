@@ -155,7 +155,12 @@ export default function ShopPage() {
           <Doodle className="scribble -right-2 top-3" />
           <Doodle className="scribble bottom-2 left-2" />
           <p className="text-sm uppercase tracking-[0.2em] text-muted">{t('shop.heroTag')}</p>
-          <h1 className="mt-2 max-w-2xl font-script text-5xl leading-tight text-ink">{t('shop.heroTitle')}</h1>
+          <h1
+            className="mt-2 max-w-2xl text-5xl leading-tight text-ink"
+            style={{ fontFamily: 'LazyDog, "Comic Sans MS", "Comic Sans", cursive' }}
+          >
+            {t('shop.heroTitle')}
+          </h1>
           <p className="mt-3 max-w-xl text-muted">{t('shop.heroDesc')}</p>
           <div className="mt-6 flex gap-3">
             <Button onClick={() => setCartOpen(true)}>
