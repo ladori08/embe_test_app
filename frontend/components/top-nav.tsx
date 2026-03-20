@@ -8,7 +8,7 @@ import { useAuth } from '@/components/auth-context';
 import { useI18n } from '@/components/language-context';
 import { hasRole } from '@/lib/permissions';
 
-const STORE_LOGO_URL = 'http://localhost:8080/api/uploads/product-images/1773919296983-6193e106c6b846f487e5f4692515523c.png';
+const STORE_LOGO_URL = '/embe-logo-topnav.png';
 
 export function TopNav() {
   const { user, logout } = useAuth();
@@ -31,7 +31,7 @@ export function TopNav() {
             <img
               src={STORE_LOGO_URL}
               alt="embé.bakery"
-              className="h-10 w-auto max-w-[220px] object-contain sm:h-11"
+              className="h-7 w-auto max-w-[170px] object-contain sm:h-8"
               onError={() => setLogoError(true)}
             />
           )}
