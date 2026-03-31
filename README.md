@@ -122,3 +122,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8080
 
 - Bake workflow is idempotent by `idempotencyKey`.
 - Order stock mutation rule uses **CONFIRMED** status for stock deduction and restores stock on **CANCELLED** after deduction.
+
+## Production Prep
+
+- Production compose + env template + backup/restore scripts: [docs/DEPLOY_PRODUCTION.md](docs/DEPLOY_PRODUCTION.md)

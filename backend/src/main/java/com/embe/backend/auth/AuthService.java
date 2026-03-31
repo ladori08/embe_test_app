@@ -126,8 +126,8 @@ public class AuthService {
     private void setAuthCookie(HttpServletResponse response, String value, long maxAgeSeconds) {
         ResponseCookie cookie = ResponseCookie.from(jwtProperties.getCookieName(), value)
                 .httpOnly(true)
-                .secure(false)
-                .sameSite("Lax")
+                .secure(jwtProperties.isCookieSecure())
+                .sameSite(jwtProperties.getCookieSameSite())
                 .path("/")
                 .maxAge(Duration.ofSeconds(maxAgeSeconds))
                 .build();

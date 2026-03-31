@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useI18n } from '@/components/language-context';
 import { api } from '@/lib/api';
-import { BakeRecord, Recipe } from '@/lib/types';
+import { BakeRecord, Product, Recipe } from '@/lib/types';
 
 type OverrideLine = {
   ingredientId: string;
@@ -24,6 +24,7 @@ type OverrideLine = {
 
 export default function AdminProductionPage() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [bakes, setBakes] = useState<BakeRecord[]>([]);
   const [recipeId, setRecipeId] = useState('');
   const [batchFactor, setBatchFactor] = useState(1);
@@ -35,9 +36,15 @@ export default function AdminProductionPage() {
   const { t } = useI18n();
 
   const selectedRecipe = useMemo(() => recipes.find(recipe => recipe.id === recipeId) || null, [recipes, recipeId]);
+  const recipeNamesById = useMemo(() => new Map(recipes.map(recipe => [recipe.id, recipe.productName])), [recipes]);
+  const productNamesById = useMemo(() => new Map(products.map(product => [product.id, product.name])), [products]);
 
   const load = async () => {
-    const [recipeResult, bakeResult] = await Promise.allSettled([api.listRecipes(), api.listBakes()]);
+    const [recipeResult, productResult, bakeResult] = await Promise.allSettled([
+      api.listRecipes(),
+      api.listProductsAdmin(),
+      api.listBakes()
+    ]);
 
     const loadErrors: string[] = [];
 
@@ -57,6 +64,13 @@ export default function AdminProductionPage() {
       setRecipes([]);
       setRecipeId('');
       loadErrors.push(recipeResult.reason instanceof Error ? recipeResult.reason.message : t('admin.production.failed'));
+    }
+
+    if (productResult.status === 'fulfilled') {
+      setProducts(productResult.value);
+    } else {
+      setProducts([]);
+      loadErrors.push(productResult.reason instanceof Error ? productResult.reason.message : t('admin.production.failed'));
     }
 
     if (bakeResult.status === 'fulfilled') {
@@ -139,6 +153,18 @@ export default function AdminProductionPage() {
     }
   };
 
+  const resolveBakeRecipeName = (bake: BakeRecord): string => {
+    const fromRecipe = recipeNamesById.get(bake.recipeId);
+    if (fromRecipe) {
+      return fromRecipe;
+    }
+    const fromProduct = productNamesById.get(bake.productId);
+    if (fromProduct) {
+      return fromProduct;
+    }
+    return bake.recipeId;
+  };
+
   return (
     <>
       <TopNav />
@@ -201,7 +227,7 @@ export default function AdminProductionPage() {
                     {bakes.map(bake => (
                       <TableRow key={bake.id}>
                         <TableCell>{bake.id.slice(0, 8)}...</TableCell>
-                        <TableCell>{bake.recipeId}</TableCell>
+                        <TableCell>{resolveBakeRecipeName(bake)}</TableCell>
                         <TableCell>v{bake.recipeVersion ?? 1}</TableCell>
                         <TableCell>{bake.customOverride ? t('common.yes') : t('common.no')}</TableCell>
                         <TableCell>{bake.factor}</TableCell>

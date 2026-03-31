@@ -17,6 +17,7 @@ import {
   BakeRecord,
   DatabaseBackupDetail,
   DatabaseBackupFileSummary,
+  DatabaseBackupSource,
   DatabaseDependencyCheckResponse,
   DatabaseDependencyReference,
   DatabaseDependencyResolveOperation,
@@ -267,6 +268,7 @@ export default function AdminDatabasePage() {
   const [backupListOpen, setBackupListOpen] = useState(false);
   const [backupListLoading, setBackupListLoading] = useState(false);
   const [backupList, setBackupList] = useState<DatabaseBackupFileSummary[]>([]);
+  const [backupSource, setBackupSource] = useState<DatabaseBackupSource>('LOCAL');
   const [backupDetailOpen, setBackupDetailOpen] = useState(false);
   const [backupDetailLoading, setBackupDetailLoading] = useState(false);
   const [backupDetail, setBackupDetail] = useState<DatabaseBackupDetail | null>(null);
@@ -1292,11 +1294,11 @@ export default function AdminDatabasePage() {
     }
   };
 
-  const loadBackupList = async () => {
+  const loadBackupList = async (sourceOverride?: DatabaseBackupSource) => {
     setBackupListLoading(true);
     setBackupError('');
     try {
-      const list = await api.listDatabaseBackups(accessToken);
+      const list = await api.listDatabaseBackups(accessToken, sourceOverride ?? backupSource);
       setBackupList(list);
     } catch (err) {
       setBackupError(err instanceof Error ? err.message : t('admin.database.queryFailed'));
@@ -1311,6 +1313,10 @@ export default function AdminDatabasePage() {
   };
 
   const requestDeleteBackup = (fileName: string) => {
+    if (backupSource === 'DRIVE') {
+      setBackupError(t('admin.database.backupDeleteDriveUnsupported'));
+      return;
+    }
     setDeleteBackupFileName(fileName);
     setDeleteBackupConfirmText('');
     setDeleteBackupOpen(true);
@@ -1339,7 +1345,7 @@ export default function AdminDatabasePage() {
     setBackupDetail(null);
     setBackupError('');
     try {
-      const detail = await api.getDatabaseBackupDetail(accessToken, fileName);
+      const detail = await api.getDatabaseBackupDetail(accessToken, fileName, backupSource);
       setBackupDetail(detail);
     } catch (err) {
       setBackupError(err instanceof Error ? err.message : t('admin.database.queryFailed'));
@@ -1354,7 +1360,7 @@ export default function AdminDatabasePage() {
     setRestoringBackup(true);
     setBackupError('');
     try {
-      const result = await api.restoreDatabaseBackup(accessToken, fileName);
+      const result = await api.restoreDatabaseBackup(accessToken, fileName, backupSource);
       setInfoMessage(t('admin.database.backupRestoreSuccess', { file: result.restoredFromFile }));
       await Promise.all([runQuery({ nextPage: 1 }), loadBackupList(), loadReferenceData()]);
     } catch (err) {
@@ -1469,7 +1475,7 @@ export default function AdminDatabasePage() {
             </Card>
           ) : (
             <div className="mx-auto w-full max-w-6xl space-y-4">
-              <Card className="space-y-3 overflow-hidden">
+              <Card className="space-y-3 overflow-visible">
                 <div className="flex flex-wrap items-center gap-2 text-sm text-muted">
                   <span>{t('admin.database.sessionExpires', { time: new Date(sessionExpiresAt).toLocaleString() })}</span>
                 </div>
@@ -2015,6 +2021,22 @@ export default function AdminDatabasePage() {
           <DialogHeader>
             <DialogTitle>{t('admin.database.backupListTitle')}</DialogTitle>
           </DialogHeader>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted">{t('admin.database.backupSource')}:</span>
+            <Select
+              value={backupSource}
+              onChange={event => {
+                const nextSource = event.target.value as DatabaseBackupSource;
+                setBackupSource(nextSource);
+                setBackupDetail(null);
+                setBackupDetailOpen(false);
+                void loadBackupList(nextSource);
+              }}
+            >
+              <option value="LOCAL">{t('admin.database.backupSourceLocal')}</option>
+              <option value="DRIVE">{t('admin.database.backupSourceDrive')}</option>
+            </Select>
+          </div>
           {backupError ? <p className="text-sm text-red-600">{backupError}</p> : null}
           {backupListLoading ? (
             <p className="text-sm text-muted">{t('admin.database.backupListLoading')}</p>
@@ -2026,6 +2048,8 @@ export default function AdminDatabasePage() {
                 <TableHeader className="sticky top-0 z-20 bg-white">
                   <TableRow>
                     <TableHead className="bg-white">{t('admin.database.backupFile')}</TableHead>
+                    <TableHead className="bg-white">{t('admin.database.backupSource')}</TableHead>
+                    <TableHead className="bg-white">{t('admin.database.backupReason')}</TableHead>
                     <TableHead className="bg-white">{t('admin.database.backupCreatedAt')}</TableHead>
                     <TableHead className="bg-white">{t('admin.database.backupSize')}</TableHead>
                     <TableHead className="bg-white">{t('admin.database.actions')}</TableHead>
@@ -2033,8 +2057,10 @@ export default function AdminDatabasePage() {
                 </TableHeader>
                 <TableBody>
                   {backupList.map(item => (
-                    <TableRow key={item.fileName}>
+                    <TableRow key={`${item.source}-${item.fileName}`}>
                       <TableCell className="text-xs">{item.fileName}</TableCell>
+                      <TableCell>{item.source === 'DRIVE' ? t('admin.database.backupSourceDrive') : t('admin.database.backupSourceLocal')}</TableCell>
+                      <TableCell>{item.trigger || '-'}</TableCell>
                       <TableCell>{new Date(item.createdAt).toLocaleString()}</TableCell>
                       <TableCell>{formatFileSize(item.sizeBytes)}</TableCell>
                       <TableCell>
@@ -2051,14 +2077,16 @@ export default function AdminDatabasePage() {
                           >
                             {restoringBackup ? t('admin.database.backupRestoreRunning') : t('admin.database.backupRestore')}
                           </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            className="h-8 px-3 text-xs"
-                            onClick={() => requestDeleteBackup(item.fileName)}
-                          >
-                            {t('common.delete')}
-                          </Button>
+                          {backupSource === 'LOCAL' ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="h-8 px-3 text-xs"
+                              onClick={() => requestDeleteBackup(item.fileName)}
+                            >
+                              {t('common.delete')}
+                            </Button>
+                          ) : null}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -2092,6 +2120,10 @@ export default function AdminDatabasePage() {
                   <strong>{t('admin.database.backupCreatedAt')}:</strong> {new Date(backupDetail.createdAt).toLocaleString()}
                 </p>
                 <p>
+                  <strong>{t('admin.database.backupSource')}:</strong>{' '}
+                  {backupDetail.source === 'DRIVE' ? t('admin.database.backupSourceDrive') : t('admin.database.backupSourceLocal')}
+                </p>
+                <p>
                   <strong>{t('admin.database.backupTrigger')}:</strong> {backupDetail.trigger}
                 </p>
                 <p>
@@ -2107,7 +2139,9 @@ export default function AdminDatabasePage() {
               <div>
                 <p className="mb-2 font-semibold">{t('admin.database.backupCollections')}</p>
                 {backupDetail.collections.length === 0 ? (
-                  <p className="text-sm text-muted">{t('admin.database.empty')}</p>
+                  <p className="text-sm text-muted">
+                    {backupDetail.source === 'DRIVE' ? t('admin.database.backupDetailDriveNoCollectionPreview') : t('admin.database.empty')}
+                  </p>
                 ) : (
                   <div className="max-h-[40vh] overflow-auto">
                     <Table className="min-w-full">

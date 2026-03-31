@@ -4,6 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 
 public record DatabaseRestoreBackupRequest(
         @NotBlank(message = "Backup file name is required")
-        String fileName
+        String fileName,
+        String source
 ) {
 }

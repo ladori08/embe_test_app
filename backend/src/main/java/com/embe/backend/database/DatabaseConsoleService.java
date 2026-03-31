@@ -449,19 +449,19 @@ public class DatabaseConsoleService {
         return backupService.deleteBackupFile(fileName, confirmText);
     }
 
-    public List<DatabaseBackupFileSummaryResponse> listBackups(String accessToken) {
+    public List<DatabaseBackupFileSummaryResponse> listBackups(String accessToken, String sourceRaw) {
         validateAccess(accessToken);
-        return backupService.listBackups();
+        return backupService.listBackups(DatabaseBackupSource.from(sourceRaw));
     }
 
-    public DatabaseBackupDetailResponse getBackupDetail(String accessToken, String fileName) {
+    public DatabaseBackupDetailResponse getBackupDetail(String accessToken, String fileName, String sourceRaw) {
         validateAccess(accessToken);
-        return backupService.getBackupDetail(fileName);
+        return backupService.getBackupDetail(DatabaseBackupSource.from(sourceRaw), fileName);
     }
 
-    public DatabaseRestoreBackupResponse restoreBackup(String accessToken, String fileName) {
+    public DatabaseRestoreBackupResponse restoreBackup(String accessToken, String fileName, String sourceRaw) {
         validateAccess(accessToken);
-        return backupService.restoreBackup(fileName, safeCurrentUserEmail());
+        return backupService.restoreBackup(DatabaseBackupSource.from(sourceRaw), fileName, safeCurrentUserEmail());
     }
 
     public DatabaseExportPayload export(String accessToken, String format, DatabaseExportRequest request) {

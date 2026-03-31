@@ -192,11 +192,11 @@ export function Select({ className, children, value, defaultValue, onChange, dis
         aria-autocomplete="list"
         disabled={disabled}
       />
-      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted">▾</span>
+      <span className="pointer-events-none absolute right-3 top-5 -translate-y-1/2 text-sm leading-none text-muted">▾</span>
       <select
         tabIndex={-1}
         aria-hidden="true"
-        className="sr-only"
+        className="hidden"
         id={id}
         name={name}
         value={selectedValue}
@@ -211,7 +211,7 @@ export function Select({ className, children, value, defaultValue, onChange, dis
         <div
           id={id ? `${id}-listbox` : undefined}
           role="listbox"
-          className="absolute left-0 right-0 top-[calc(100%+4px)] z-50 max-h-56 overflow-auto rounded-xl border border-border bg-white shadow-lg"
+          className="absolute left-0 right-0 top-10 z-50 max-h-56 overflow-auto rounded-xl border border-border bg-white shadow-lg"
         >
           {filteredOptions.length === 0 ? (
             <p className="px-3 py-2 text-sm text-muted">No matches</p>

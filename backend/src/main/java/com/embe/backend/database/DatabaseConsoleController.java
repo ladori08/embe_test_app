@@ -127,9 +127,10 @@ public class DatabaseConsoleController {
 
     @GetMapping("/backups")
     public List<DatabaseBackupFileSummaryResponse> listBackups(
-            @RequestHeader(name = ACCESS_TOKEN_HEADER) String accessToken
+            @RequestHeader(name = ACCESS_TOKEN_HEADER) String accessToken,
+            @RequestParam(defaultValue = "LOCAL") String source
     ) {
-        return databaseConsoleService.listBackups(accessToken);
+        return databaseConsoleService.listBackups(accessToken, source);
     }
 
     @PostMapping("/backups/delete")
@@ -143,9 +144,10 @@ public class DatabaseConsoleController {
     @GetMapping("/backups/{fileName:.+}")
     public DatabaseBackupDetailResponse backupDetail(
             @RequestHeader(name = ACCESS_TOKEN_HEADER) String accessToken,
-            @PathVariable String fileName
+            @PathVariable String fileName,
+            @RequestParam(defaultValue = "LOCAL") String source
     ) {
-        return databaseConsoleService.getBackupDetail(accessToken, fileName);
+        return databaseConsoleService.getBackupDetail(accessToken, fileName, source);
     }
 
     @PostMapping("/backups/restore")
@@ -153,7 +155,7 @@ public class DatabaseConsoleController {
             @RequestHeader(name = ACCESS_TOKEN_HEADER) String accessToken,
             @Valid @RequestBody DatabaseRestoreBackupRequest request
     ) {
-        return databaseConsoleService.restoreBackup(accessToken, request.fileName());
+        return databaseConsoleService.restoreBackup(accessToken, request.fileName(), request.source());
     }
 
     @PostMapping("/export")

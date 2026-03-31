@@ -281,11 +281,15 @@ export interface DatabaseBackupResponse {
   createdAt: string;
 }
 
+export type DatabaseBackupSource = 'LOCAL' | 'DRIVE';
+
 export interface DatabaseBackupFileSummary {
   fileName: string;
   filePath: string;
   createdAt: string;
   sizeBytes: number;
+  source: DatabaseBackupSource | string;
+  trigger?: string;
 }
 
 export interface DatabaseBackupCollectionSummary {
@@ -297,6 +301,7 @@ export interface DatabaseBackupDetail {
   fileName: string;
   filePath: string;
   createdAt: string;
+  source: DatabaseBackupSource | string;
   trigger: string;
   actorEmail: string;
   database: string;
@@ -320,6 +325,7 @@ export interface DatabaseDeleteBackupResponse {
 
 export interface DatabaseRestoreBackupResponse {
   restoredFromFile: string;
+  source: DatabaseBackupSource | string;
   restoredAt: string;
   collectionsRestored: number;
   documentsRestored: number;
