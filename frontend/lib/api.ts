@@ -6,6 +6,7 @@ import {
   DatabaseBackupDetail,
   DatabaseBackupDirectory,
   DatabaseBackupFileSummary,
+  DatabaseBackupSource,
   DatabaseBackupResponse,
   DatabaseCollection,
   DatabaseCollectionFields,
@@ -301,8 +302,8 @@ export const api = {
       method: 'POST',
       headers: { 'X-Database-Access-Token': accessToken }
     }),
-  listDatabaseBackups: (accessToken: string) =>
-    request<DatabaseBackupFileSummary[]>('/api/admin/database/backups', {
+  listDatabaseBackups: (accessToken: string, source: DatabaseBackupSource = 'LOCAL') =>
+    request<DatabaseBackupFileSummary[]>(`/api/admin/database/backups?source=${encodeURIComponent(source)}`, {
       headers: { 'X-Database-Access-Token': accessToken }
     }),
   deleteDatabaseBackup: (accessToken: string, fileName: string, confirmText: string) =>
@@ -311,15 +312,15 @@ export const api = {
       headers: { 'X-Database-Access-Token': accessToken },
       body: JSON.stringify({ fileName, confirmText })
     }),
-  getDatabaseBackupDetail: (accessToken: string, fileName: string) =>
-    request<DatabaseBackupDetail>(`/api/admin/database/backups/${encodeURIComponent(fileName)}`, {
+  getDatabaseBackupDetail: (accessToken: string, fileName: string, source: DatabaseBackupSource = 'LOCAL') =>
+    request<DatabaseBackupDetail>(`/api/admin/database/backups/${encodeURIComponent(fileName)}?source=${encodeURIComponent(source)}`, {
       headers: { 'X-Database-Access-Token': accessToken }
     }),
-  restoreDatabaseBackup: (accessToken: string, fileName: string) =>
+  restoreDatabaseBackup: (accessToken: string, fileName: string, source: DatabaseBackupSource = 'LOCAL') =>
     request<DatabaseRestoreBackupResponse>('/api/admin/database/backups/restore', {
       method: 'POST',
       headers: { 'X-Database-Access-Token': accessToken },
-      body: JSON.stringify({ fileName })
+      body: JSON.stringify({ fileName, source })
     }),
   exportDatabase: async (
     accessToken: string,

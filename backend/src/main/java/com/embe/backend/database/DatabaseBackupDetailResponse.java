@@ -7,6 +7,7 @@ public record DatabaseBackupDetailResponse(
         String fileName,
         String filePath,
         Instant createdAt,
+        String source,
         String trigger,
         String actorEmail,
         String database,
