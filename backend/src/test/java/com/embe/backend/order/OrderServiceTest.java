@@ -76,6 +76,9 @@ class OrderServiceTest {
                 "Alice",
                 "0901234567",
                 "123 Test Street",
+                "2026-03-20",
+                "10:30",
+                PaymentMethod.COD_DEPOSIT,
                 "Leave at door"
         ), null);
 
@@ -105,6 +108,9 @@ class OrderServiceTest {
                         "Alice",
                         "0901234567",
                         "123 Test Street",
+                        "2026-03-20",
+                        "10:30",
+                        PaymentMethod.COD_DEPOSIT,
                         null
                 ), null)
         );
@@ -140,6 +146,9 @@ class OrderServiceTest {
                 "Alice",
                 "0901234567",
                 "123 Test Street",
+                "2026-03-20",
+                "10:30",
+                PaymentMethod.BANK_TRANSFER,
                 null
         ), null);
 

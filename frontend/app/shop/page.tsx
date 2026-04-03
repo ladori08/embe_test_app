@@ -1,17 +1,19 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ShoppingBag } from 'lucide-react';
 import { TopNav } from '@/components/top-nav';
 import { Doodle } from '@/components/doodle';
 import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CartDrawer } from '@/components/cart-drawer';
 import { useCart } from '@/components/cart-context';
 import { useI18n } from '@/components/language-context';
 import { api } from '@/lib/api';
+import { resolveProductImageUrl } from '@/lib/product-images';
 import { Product } from '@/lib/types';
 
 export default function ShopPage() {
@@ -21,8 +23,27 @@ export default function ShopPage() {
   const [stockWarning, setStockWarning] = useState('');
   const [cartOpen, setCartOpen] = useState(false);
   const [selectedQty, setSelectedQty] = useState<Record<string, number>>({});
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailProduct, setDetailProduct] = useState<Product | null>(null);
+  const [detailImageIndex, setDetailImageIndex] = useState(0);
+  const [addedPreviewOpen, setAddedPreviewOpen] = useState(false);
+  const [addedPreviewVisible, setAddedPreviewVisible] = useState(false);
+  const [addedPreview, setAddedPreview] = useState<{ product: Product; qty: number } | null>(null);
+  const addedPreviewHideTimerRef = useRef<number | null>(null);
+  const addedPreviewCloseTimerRef = useRef<number | null>(null);
   const { addItem, itemCount, items, stockByProductId } = useCart();
   const { t, moneyCompact } = useI18n();
+
+  const clearAddedPreviewTimers = () => {
+    if (addedPreviewHideTimerRef.current !== null) {
+      window.clearTimeout(addedPreviewHideTimerRef.current);
+      addedPreviewHideTimerRef.current = null;
+    }
+    if (addedPreviewCloseTimerRef.current !== null) {
+      window.clearTimeout(addedPreviewCloseTimerRef.current);
+      addedPreviewCloseTimerRef.current = null;
+    }
+  };
 
   const getInCartQty = (productId: string) => {
     const item = items.find(cartItem => cartItem.productId === productId);
@@ -34,6 +55,18 @@ export default function ShopPage() {
     const sourceStock = Number.isFinite(syncedStock) ? syncedStock : Number(product.currentStock);
     const currentStock = Number.isFinite(sourceStock) ? Math.max(0, Math.floor(sourceStock)) : 0;
     return Math.max(0, currentStock - getInCartQty(product.id));
+  };
+
+  const getProductImages = (product: Product) => {
+    if (!Array.isArray(product.images) || product.images.length === 0) {
+      return [];
+    }
+    return product.images.map(image => resolveProductImageUrl(image)).filter(Boolean);
+  };
+
+  const getPrimaryImage = (product: Product) => {
+    const images = getProductImages(product);
+    return images[0] || '';
   };
 
   const getSelectedQty = (productId: string, maxQty: number) => {
@@ -59,6 +92,20 @@ export default function ShopPage() {
     }));
   };
 
+  const openDetail = (product: Product) => {
+    setDetailProduct(product);
+    setDetailImageIndex(0);
+    setDetailOpen(true);
+  };
+
+  const closeDetail = (nextOpen: boolean) => {
+    setDetailOpen(nextOpen);
+    if (!nextOpen) {
+      setDetailProduct(null);
+      setDetailImageIndex(0);
+    }
+  };
+
   useEffect(() => {
     api
       .listPublicProducts()
@@ -66,6 +113,39 @@ export default function ShopPage() {
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    return () => {
+      clearAddedPreviewTimers();
+    };
+  }, []);
+
+  const detailImages = detailProduct ? getProductImages(detailProduct) : [];
+
+  const addProductToCart = (product: Product, qty: number, resetPickedQty: boolean) => {
+    const result = addItem(product, qty);
+    if (!result.ok) {
+      setStockWarning(t('shop.insufficientStock', { name: product.name, available: result.available }));
+      return;
+    }
+    setStockWarning('');
+    if (resetPickedQty) {
+      setSelectedQty(prev => ({ ...prev, [product.id]: result.available > 0 ? 1 : 0 }));
+    }
+    clearAddedPreviewTimers();
+    setAddedPreview({ product, qty });
+    setAddedPreviewOpen(true);
+    setAddedPreviewVisible(false);
+    window.requestAnimationFrame(() => setAddedPreviewVisible(true));
+    addedPreviewHideTimerRef.current = window.setTimeout(() => {
+      setAddedPreviewVisible(false);
+    }, 2600);
+    addedPreviewCloseTimerRef.current = window.setTimeout(() => {
+      setAddedPreviewOpen(false);
+      setAddedPreview(null);
+      clearAddedPreviewTimers();
+    }, 3000);
+  };
 
   return (
     <>
@@ -75,7 +155,12 @@ export default function ShopPage() {
           <Doodle className="scribble -right-2 top-3" />
           <Doodle className="scribble bottom-2 left-2" />
           <p className="text-sm uppercase tracking-[0.2em] text-muted">{t('shop.heroTag')}</p>
-          <h1 className="mt-2 max-w-2xl font-script text-5xl leading-tight text-ink">{t('shop.heroTitle')}</h1>
+          <h1
+            className="mt-2 max-w-2xl text-5xl leading-tight text-ink"
+            style={{ fontFamily: 'LazyDog, "Comic Sans MS", "Comic Sans", cursive' }}
+          >
+            {t('shop.heroTitle')}
+          </h1>
           <p className="mt-3 max-w-xl text-muted">{t('shop.heroDesc')}</p>
           <div className="mt-6 flex gap-3">
             <Button onClick={() => setCartOpen(true)}>
@@ -106,7 +191,26 @@ export default function ShopPage() {
               const pickedQty = getSelectedQty(product.id, remainingStock);
 
               return (
-                <Card key={product.id} className="reveal">
+                <Card
+                  key={product.id}
+                  className="reveal cursor-pointer transition hover:-translate-y-0.5 hover:border-accent/40"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => openDetail(product)}
+                  onKeyDown={event => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      openDetail(product);
+                    }
+                  }}
+                >
+                  {getPrimaryImage(product) ? (
+                    <img src={getPrimaryImage(product)} alt={product.name} className="mb-3 aspect-[16/9] w-full rounded-xl border border-border object-cover" />
+                  ) : (
+                    <div className="mb-3 flex aspect-[16/9] w-full items-center justify-center rounded-xl border border-dashed border-border bg-[#f8f1e8] text-xs text-muted">
+                      {t('shop.imageEmpty')}
+                    </div>
+                  )}
                   <CardTitle>{product.name}</CardTitle>
                   <CardDescription>{product.category}</CardDescription>
                   <CardContent className="space-y-3">
@@ -114,7 +218,7 @@ export default function ShopPage() {
                       <span className="text-lg font-semibold">{moneyCompact(product.price)}</span>
                       <Badge>{t('shop.stock', { stock: remainingStock })}</Badge>
                     </div>
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between" onClick={event => event.stopPropagation()}>
                       <span className="text-sm text-muted">{t('shop.quantity')}</span>
                       <div className="flex items-center gap-2">
                         <Button
@@ -138,17 +242,9 @@ export default function ShopPage() {
                         </Button>
                       </div>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2" onClick={event => event.stopPropagation()}>
                       <Button
-                        onClick={() => {
-                          const result = addItem(product, pickedQty);
-                          if (!result.ok) {
-                            setStockWarning(t('shop.insufficientStock', { name: product.name, available: result.available }));
-                            return;
-                          }
-                          setStockWarning('');
-                          setSelectedQty(prev => ({ ...prev, [product.id]: result.available > 0 ? 1 : 0 }));
-                        }}
+                        onClick={() => addProductToCart(product, pickedQty, true)}
                         className="flex-1"
                         disabled={remainingStock <= 0 || pickedQty <= 0}
                       >
@@ -158,23 +254,11 @@ export default function ShopPage() {
                         type="button"
                         variant="outline"
                         className="px-3"
-                        onClick={() => {
-                          const result = addItem(product, 1);
-                          if (!result.ok) {
-                            setStockWarning(t('shop.insufficientStock', { name: product.name, available: result.available }));
-                            return;
-                          }
-                          setStockWarning('');
-                        }}
+                        onClick={() => addProductToCart(product, 1, false)}
                         disabled={remainingStock <= 0}
                       >
                         {t('shop.quickAddOne')}
                       </Button>
-                      <Link className="flex-1" href={`/shop/product/${product.id}`}>
-                        <Button variant="outline" className="w-full">
-                          {t('shop.details')}
-                        </Button>
-                      </Link>
                     </div>
                   </CardContent>
                 </Card>
@@ -183,6 +267,142 @@ export default function ShopPage() {
           </div>
         </section>
       </main>
+      <Dialog open={detailOpen} onOpenChange={closeDetail}>
+        <DialogContent className="max-w-2xl">
+          {detailProduct ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>{detailProduct.name}</DialogTitle>
+              </DialogHeader>
+              {detailImages[detailImageIndex] || getPrimaryImage(detailProduct) ? (
+                <img
+                  src={detailImages[detailImageIndex] || getPrimaryImage(detailProduct)}
+                  alt={detailProduct.name}
+                  className="aspect-[16/9] w-full rounded-xl border border-border object-cover"
+                />
+              ) : (
+                <div className="flex aspect-[16/9] w-full items-center justify-center rounded-xl border border-dashed border-border bg-[#f8f1e8] text-sm text-muted">
+                  {t('shop.imageEmpty')}
+                </div>
+              )}
+              {detailImages.length > 1 ? (
+                <div className="mt-2 grid grid-cols-5 gap-2">
+                  {detailImages.map((imageUrl, index) => (
+                    <button
+                      key={`${imageUrl}-${index}`}
+                      type="button"
+                      className={`overflow-hidden rounded-lg border ${detailImageIndex === index ? 'border-accent' : 'border-border'}`}
+                      onClick={() => setDetailImageIndex(index)}
+                    >
+                      <img src={imageUrl} alt={`${detailProduct.name}-${index + 1}`} className="h-14 w-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <p className="text-sm text-muted">{detailProduct.category}</p>
+              <div className="mt-4 flex items-center gap-3">
+                <span className="text-xl font-semibold">{moneyCompact(detailProduct.price)}</span>
+                <Badge>{t('product.stock', { stock: getRemainingStock(detailProduct) })}</Badge>
+              </div>
+              <p className="mt-3 text-sm text-muted">{t('product.description')}</p>
+              <div className="mt-4 flex items-center gap-3">
+                <span className="text-sm text-muted">{t('shop.quantity')}</span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-9 w-9 px-0"
+                    onClick={() =>
+                      setQty(
+                        detailProduct.id,
+                        getSelectedQty(detailProduct.id, getRemainingStock(detailProduct)) - 1,
+                        getRemainingStock(detailProduct)
+                      )
+                    }
+                    disabled={getRemainingStock(detailProduct) <= 0 || getSelectedQty(detailProduct.id, getRemainingStock(detailProduct)) <= 1}
+                  >
+                    -
+                  </Button>
+                  <span className="w-10 text-center tabular-nums">{getSelectedQty(detailProduct.id, getRemainingStock(detailProduct))}</span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-9 w-9 px-0"
+                    onClick={() =>
+                      setQty(
+                        detailProduct.id,
+                        getSelectedQty(detailProduct.id, getRemainingStock(detailProduct)) + 1,
+                        getRemainingStock(detailProduct)
+                      )
+                    }
+                    disabled={
+                      getRemainingStock(detailProduct) <= 0 ||
+                      getSelectedQty(detailProduct.id, getRemainingStock(detailProduct)) >= getRemainingStock(detailProduct)
+                    }
+                  >
+                    +
+                  </Button>
+                </div>
+              </div>
+              <div className="mt-5 flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  onClick={() => addProductToCart(detailProduct, getSelectedQty(detailProduct.id, getRemainingStock(detailProduct)), true)}
+                  disabled={getRemainingStock(detailProduct) <= 0 || getSelectedQty(detailProduct.id, getRemainingStock(detailProduct)) <= 0}
+                >
+                  {t('shop.addToCart')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => addProductToCart(detailProduct, 1, false)}
+                  disabled={getRemainingStock(detailProduct) <= 0}
+                >
+                  {t('shop.quickAddOne')}
+                </Button>
+                <Link href="/shop/cart">
+                  <Button type="button" variant="outline">
+                    {t('product.viewCart')}
+                  </Button>
+                </Link>
+              </div>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+      {addedPreviewOpen && addedPreview ? (
+        <div
+          className={`pointer-events-none fixed left-1/2 top-2 z-[70] w-[min(92vw,440px)] -translate-x-1/2 transform transition-all duration-300 ${
+            addedPreviewVisible ? 'translate-y-0 opacity-100' : '-translate-y-6 opacity-0'
+          }`}
+        >
+          <div className="rounded-2xl border border-border bg-white p-3 shadow-card">
+            <p className="mb-2 text-sm font-semibold text-ink">{t('shop.addedPopupTitle')}</p>
+            <div className="flex items-center gap-3 rounded-xl border border-border bg-[#fffaf4] p-3">
+              {getPrimaryImage(addedPreview.product) ? (
+                <img
+                  src={getPrimaryImage(addedPreview.product)}
+                  alt={addedPreview.product.name}
+                  className="h-14 w-14 rounded-lg border border-border object-cover"
+                />
+              ) : (
+                <div className="flex h-14 w-14 items-center justify-center rounded-lg border border-dashed border-border bg-[#f8f1e8] text-[11px] text-muted">
+                  {t('shop.imageEmpty')}
+                </div>
+              )}
+              <div className="min-w-0 flex-1 space-y-1 text-sm">
+                <p className="truncate font-semibold">{addedPreview.product.name}</p>
+                <p className="text-muted">
+                  {t('shop.addedPopupUnitPrice')}: {moneyCompact(addedPreview.product.price)}
+                </p>
+                <p className="text-muted">
+                  {t('shop.addedPopupQty')}: {addedPreview.qty}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <CartDrawer open={cartOpen} onOpenChange={setCartOpen} />
     </>
   );

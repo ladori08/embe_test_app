@@ -6,8 +6,8 @@ spring:
     default-property-inclusion: non_null
   servlet:
     multipart:
-      max-file-size: 5MB
-      max-request-size: 5MB
+      max-file-size: 25MB
+      max-request-size: 50MB
 
 server:
   port: 8080
@@ -21,9 +21,22 @@ embe:
     secret: ${JWT_SECRET:0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF}
     expirationMinutes: 240
     cookieName: EMBE_TOKEN
+    cookieSecure: ${EMBE_JWT_COOKIE_SECURE:false}
+    cookieSameSite: ${EMBE_JWT_COOKIE_SAME_SITE:Lax}
+  cors:
+    allowed-origin-patterns: ${EMBE_CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:*,http://127.0.0.1:*}
   database-console:
     backup-dir: ${DATABASE_BACKUP_DIR:backups/database-console}
     session-ttl-minutes: ${DATABASE_SESSION_TTL_MINUTES:30}
+    drive:
+      remote: ${EMBE_DATABASE_DRIVE_REMOTE:}
+      temp-dir: ${EMBE_DATABASE_DRIVE_TEMP_DIR:/tmp/embe-database-drive}
+      command-timeout-seconds: ${EMBE_DATABASE_DRIVE_COMMAND_TIMEOUT_SECONDS:300}
+      retention:
+        auto: ${EMBE_DATABASE_DRIVE_RETENTION_AUTO:16}
+        login: ${EMBE_DATABASE_DRIVE_RETENTION_LOGIN:10}
+  product-images:
+    storage-dir: ${PRODUCT_IMAGE_STORAGE_DIR:uploads/product-images}
 
 logging:
   level:

@@ -60,6 +60,14 @@ export interface Product {
   images?: string[];
 }
 
+export interface MediaImage {
+  fileName: string;
+  path: string;
+  url: string;
+  sizeBytes: number;
+  lastModified: string;
+}
+
 export interface ProductCategory {
   id: string;
   name: string;
@@ -140,6 +148,7 @@ export interface BakeRecord {
 }
 
 export type OrderStatus = 'NEW' | 'CONFIRMED' | 'PAID' | 'CANCELLED' | 'COMPLETED';
+export type PaymentMethod = 'COD_DEPOSIT' | 'BANK_TRANSFER';
 
 export interface OrderItem {
   productId: string;
@@ -156,6 +165,9 @@ export interface Order {
   recipientName?: string | null;
   recipientPhone?: string | null;
   deliveryAddress?: string | null;
+  deliveryDate?: string | null;
+  deliveryTime?: string | null;
+  paymentMethod?: PaymentMethod | null;
   note?: string | null;
   subtotal: number;
   tax: number;
@@ -269,11 +281,15 @@ export interface DatabaseBackupResponse {
   createdAt: string;
 }
 
+export type DatabaseBackupSource = 'LOCAL' | 'DRIVE';
+
 export interface DatabaseBackupFileSummary {
   fileName: string;
   filePath: string;
   createdAt: string;
   sizeBytes: number;
+  source: DatabaseBackupSource | string;
+  trigger?: string;
 }
 
 export interface DatabaseBackupCollectionSummary {
@@ -285,6 +301,7 @@ export interface DatabaseBackupDetail {
   fileName: string;
   filePath: string;
   createdAt: string;
+  source: DatabaseBackupSource | string;
   trigger: string;
   actorEmail: string;
   database: string;
@@ -292,10 +309,69 @@ export interface DatabaseBackupDetail {
   collections: DatabaseBackupCollectionSummary[];
 }
 
+export interface DatabaseBackupDirectory {
+  directoryPath: string;
+}
+
+export interface DatabaseOpenDirectoryResponse {
+  opened: boolean;
+  message: string;
+}
+
+export interface DatabaseDeleteBackupResponse {
+  fileName: string;
+  deletedAt: string;
+}
+
 export interface DatabaseRestoreBackupResponse {
   restoredFromFile: string;
+  source: DatabaseBackupSource | string;
   restoredAt: string;
   collectionsRestored: number;
   documentsRestored: number;
   preRestoreBackupFile: string;
+}
+
+export interface DatabaseDependencyReference {
+  collection: string;
+  documentId: string;
+  documentTitle: string;
+  fieldPath: string;
+  valuePreview: string;
+}
+
+export interface DatabaseDependencyCheckResponse {
+  targetCollection: string;
+  targetDocumentId: string;
+  targetDocumentTitle: string;
+  dependencyCount: number;
+  dependencies: DatabaseDependencyReference[];
+}
+
+export type DatabaseDependencyResolveAction = 'REMOVE' | 'REPLACE';
+
+export interface DatabaseDependencyResolveOperation {
+  collection: string;
+  documentId: string;
+  fieldPath: string;
+  action: DatabaseDependencyResolveAction;
+  replacementCollection?: string;
+  replacementDocumentId?: string;
+  replacementValue?: string;
+}
+
+export interface DatabaseDependencyResolveResponse {
+  targetCollection: string;
+  targetDocumentId: string;
+  totalOperations: number;
+  appliedOperations: number;
+}
+
+export type DatabaseWipeScope = 'COLLECTION' | 'DATABASE';
+
+export interface DatabaseWipeResponse {
+  scope: DatabaseWipeScope;
+  collection?: string | null;
+  deletedDocuments: number;
+  backupFile: string;
 }

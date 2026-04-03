@@ -34,6 +34,15 @@ services:
     environment:
       MONGODB_URI: mongodb://mongodb:27017/embe?replicaSet=rs0
       JWT_SECRET: 0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF
+      PRODUCT_IMAGE_STORAGE_DIR: /app/uploads/product-images
+      EMBE_DATABASE_DRIVE_REMOTE: ${EMBE_DATABASE_DRIVE_REMOTE:-gdrive:EmbeBackups}
+      EMBE_DATABASE_DRIVE_TEMP_DIR: /tmp/embe-database-drive
+      EMBE_DATABASE_DRIVE_COMMAND_TIMEOUT_SECONDS: 300
+      EMBE_DATABASE_DRIVE_RETENTION_AUTO: ${EMBE_DATABASE_DRIVE_RETENTION_AUTO:-16}
+      EMBE_DATABASE_DRIVE_RETENTION_LOGIN: ${EMBE_DATABASE_DRIVE_RETENTION_LOGIN:-10}
+    volumes:
+      - ./infra/uploads:/app/uploads
+      - ${HOME}/.config/rclone:/root/.config/rclone
     ports:
       - "8080:8080"
 

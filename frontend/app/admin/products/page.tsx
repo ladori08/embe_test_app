@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { TopNav } from '@/components/top-nav';
 import { RequireRole } from '@/components/require-role';
 import { AdminShell } from '@/components/admin-shell';
@@ -13,10 +13,107 @@ import { FormField } from '@/components/ui/form';
 import { Select } from '@/components/ui/select';
 import { useI18n } from '@/components/language-context';
 import { api } from '@/lib/api';
-import { Product, ProductCategory, ProductLot } from '@/lib/types';
+import { resolveProductImageUrl } from '@/lib/product-images';
+import { MediaImage, Product, ProductCategory, ProductLot } from '@/lib/types';
 
 const emptyForm = { name: '', sku: '', category: '', price: 0, currentStock: 0, isActive: true, images: [] as string[], regenerateSku: false };
 const ALL_CATEGORIES_FILTER = '__ALL_CATEGORIES__';
+const MAX_IMAGE_UPLOAD_BYTES = 25 * 1024 * 1024;
+const MAX_IMAGE_UPLOAD_MB = 25;
+const ALLOWED_IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'heic', 'heif', 'avif', 'jfif']);
+const PRODUCT_THUMBNAIL_ASPECT_RATIO = 16 / 9;
+const PRODUCT_THUMBNAIL_OUTPUT_WIDTH = 1600;
+const PRODUCT_THUMBNAIL_OUTPUT_HEIGHT = Math.round(PRODUCT_THUMBNAIL_OUTPUT_WIDTH / PRODUCT_THUMBNAIL_ASPECT_RATIO);
+
+type ImageCropOptions = {
+  xPercent: number;
+  yPercent: number;
+  zoom: number;
+  aspectRatio: number;
+  outputWidth: number;
+  outputHeight: number;
+};
+
+const mergeImageUrls = (existing: string[], appended: string[]) => {
+  const merged = [...existing, ...appended].map(item => item.trim()).filter(Boolean);
+  return Array.from(new Set(merged));
+};
+
+const loadImageFromFile = (file: File): Promise<HTMLImageElement> =>
+  new Promise((resolve, reject) => {
+    const imageUrl = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(imageUrl);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(imageUrl);
+      reject(new Error('Failed to read image'));
+    };
+    image.src = imageUrl;
+  });
+
+const buildCroppedFileName = (name: string, extension: string) => {
+  const clean = String(name || 'product-image').trim();
+  const dotIndex = clean.lastIndexOf('.');
+  const baseName = dotIndex > 0 ? clean.slice(0, dotIndex) : clean;
+  return `${baseName}-cropped.${extension}`;
+};
+
+const cropImageFile = async (file: File, options: ImageCropOptions): Promise<File> => {
+  const image = await loadImageFromFile(file);
+  const imageWidth = image.naturalWidth || image.width;
+  const imageHeight = image.naturalHeight || image.height;
+  if (!imageWidth || !imageHeight) {
+    throw new Error('Image has invalid dimensions');
+  }
+
+  let baseCropWidth: number;
+  let baseCropHeight: number;
+  if (imageWidth / imageHeight > options.aspectRatio) {
+    baseCropHeight = imageHeight;
+    baseCropWidth = imageHeight * options.aspectRatio;
+  } else {
+    baseCropWidth = imageWidth;
+    baseCropHeight = imageWidth / options.aspectRatio;
+  }
+
+  const zoom = Math.max(1, options.zoom);
+  const cropWidth = baseCropWidth / zoom;
+  const cropHeight = baseCropHeight / zoom;
+  const centerX = (Math.max(0, Math.min(100, options.xPercent)) / 100) * imageWidth;
+  const centerY = (Math.max(0, Math.min(100, options.yPercent)) / 100) * imageHeight;
+  const maxCropX = Math.max(0, imageWidth - cropWidth);
+  const maxCropY = Math.max(0, imageHeight - cropHeight);
+  const cropX = Math.max(0, Math.min(maxCropX, centerX - cropWidth / 2));
+  const cropY = Math.max(0, Math.min(maxCropY, centerY - cropHeight / 2));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = options.outputWidth;
+  canvas.height = options.outputHeight;
+  const context = canvas.getContext('2d');
+  if (!context) {
+    throw new Error('Canvas context unavailable');
+  }
+  context.drawImage(image, cropX, cropY, cropWidth, cropHeight, 0, 0, options.outputWidth, options.outputHeight);
+
+  const preferredType =
+    file.type === 'image/png'
+      ? 'image/png'
+      : file.type === 'image/webp'
+        ? 'image/webp'
+        : 'image/jpeg';
+  const extension = preferredType === 'image/png' ? 'png' : preferredType === 'image/webp' ? 'webp' : 'jpg';
+  const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, preferredType, 0.92));
+  if (!blob) {
+    throw new Error('Failed to export cropped image');
+  }
+  return new File([blob], buildCroppedFileName(file.name, extension), {
+    type: preferredType,
+    lastModified: Date.now()
+  });
+};
 
 export default function AdminProductsPage() {
   const [items, setItems] = useState<Product[]>([]);
@@ -39,6 +136,24 @@ export default function AdminProductsPage() {
   const [lotsByProduct, setLotsByProduct] = useState<Record<string, ProductLot[]>>({});
   const [lotsLoading, setLotsLoading] = useState<Record<string, boolean>>({});
   const [lotsError, setLotsError] = useState<Record<string, string>>({});
+  const [imageUploading, setImageUploading] = useState(false);
+  const [imageUploadError, setImageUploadError] = useState('');
+  const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
+  const [mediaItems, setMediaItems] = useState<MediaImage[]>([]);
+  const [mediaLoading, setMediaLoading] = useState(false);
+  const [mediaError, setMediaError] = useState('');
+  const [mediaSearch, setMediaSearch] = useState('');
+  const [selectedMediaPaths, setSelectedMediaPaths] = useState<Record<string, boolean>>({});
+  const [cropDialogOpen, setCropDialogOpen] = useState(false);
+  const [cropProcessing, setCropProcessing] = useState(false);
+  const [cropSourceFile, setCropSourceFile] = useState<File | null>(null);
+  const [cropSourceUrl, setCropSourceUrl] = useState('');
+  const [cropPendingFiles, setCropPendingFiles] = useState<File[]>([]);
+  const [cropValidationErrors, setCropValidationErrors] = useState<string[]>([]);
+  const [cropXPercent, setCropXPercent] = useState(50);
+  const [cropYPercent, setCropYPercent] = useState(50);
+  const [cropZoom, setCropZoom] = useState(1);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
   const { t, money } = useI18n();
 
   const loadProducts = async () => {
@@ -71,6 +186,50 @@ export default function AdminProductsPage() {
     void Promise.all([loadProducts(), loadCategories()]);
   }, []);
 
+  useEffect(
+    () => () => {
+      if (cropSourceUrl) {
+        URL.revokeObjectURL(cropSourceUrl);
+      }
+    },
+    [cropSourceUrl]
+  );
+
+  const resetCropState = () => {
+    if (cropSourceUrl) {
+      URL.revokeObjectURL(cropSourceUrl);
+    }
+    setCropDialogOpen(false);
+    setCropProcessing(false);
+    setCropSourceFile(null);
+    setCropSourceUrl('');
+    setCropPendingFiles([]);
+    setCropValidationErrors([]);
+    setCropXPercent(50);
+    setCropYPercent(50);
+    setCropZoom(1);
+  };
+
+  const openCropDialogForImages = (files: File[], validationErrors: string[]) => {
+    if (files.length === 0) {
+      setImageUploadError(validationErrors.join('\n'));
+      return;
+    }
+    if (cropSourceUrl) {
+      URL.revokeObjectURL(cropSourceUrl);
+    }
+    const [firstFile, ...remaining] = files;
+    setCropSourceFile(firstFile);
+    setCropSourceUrl(URL.createObjectURL(firstFile));
+    setCropPendingFiles(remaining);
+    setCropValidationErrors(validationErrors);
+    setCropXPercent(50);
+    setCropYPercent(50);
+    setCropZoom(1);
+    setCropProcessing(false);
+    setCropDialogOpen(true);
+  };
+
   useEffect(() => {
     if (!open || editing) return;
     const category = String(form.category || '').trim();
@@ -100,29 +259,199 @@ export default function AdminProductsPage() {
     if (editing) {
       setForm(emptyForm);
     }
+    resetCropState();
     setEditing(null);
     setError('');
+    setImageUploadError('');
+    setMediaError('');
     setOpen(true);
   };
 
   const openEdit = (item: Product) => {
     if (editing?.id !== item.id) {
-      setForm({ ...item, regenerateSku: false });
+      setForm({ ...item, images: Array.isArray(item.images) ? item.images : [], regenerateSku: false });
     }
+    resetCropState();
     setEditing(item);
     setError('');
+    setImageUploadError('');
+    setMediaError('');
     setOpen(true);
   };
 
   const closeProductModal = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      resetCropState();
+      closeMediaPicker(false);
+    }
     setOpen(nextOpen);
   };
 
   const cancelProductModal = () => {
+    resetCropState();
     setEditing(null);
     setForm(emptyForm);
     setError('');
+    setImageUploadError('');
+    setMediaError('');
+    closeMediaPicker(false);
     setOpen(false);
+  };
+
+  const uploadValidatedFiles = async (validFiles: File[], validationErrors: string[]) => {
+    if (validFiles.length === 0) {
+      setImageUploadError(validationErrors.join('\n'));
+      return;
+    }
+    setImageUploading(true);
+    setImageUploadError(validationErrors.join('\n'));
+    const uploadedPaths: string[] = [];
+    const uploadErrors: string[] = [];
+    try {
+      for (const file of validFiles) {
+        try {
+          const uploaded = await api.uploadProductImage(file);
+          uploadedPaths.push(uploaded.path || uploaded.url);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : t('admin.products.imageUploadFailed');
+          uploadErrors.push(`${file.name}: ${message}`);
+        }
+      }
+      if (uploadedPaths.length > 0) {
+        setForm((prev: any) => ({
+          ...prev,
+          images: mergeImageUrls(Array.isArray(prev.images) ? prev.images : [], uploadedPaths)
+        }));
+      }
+      const allErrors = [...validationErrors, ...uploadErrors];
+      setImageUploadError(allErrors.join('\n'));
+    } finally {
+      setImageUploading(false);
+    }
+  };
+
+  const uploadProductImages = async (files: FileList | null) => {
+    if (!files || files.length === 0) {
+      return;
+    }
+    const selectedFiles = Array.from(files);
+    const validationErrors: string[] = [];
+    const validFiles: File[] = [];
+    for (const file of selectedFiles) {
+      const lowerName = String(file.name || '').trim().toLowerCase();
+      const dotIndex = lowerName.lastIndexOf('.');
+      const extension = dotIndex >= 0 ? lowerName.substring(dotIndex + 1) : '';
+      const imageMime = String(file.type || '').toLowerCase().startsWith('image/');
+      if (file.size <= 0) {
+        validationErrors.push(t('admin.products.imageFileEmpty', { name: file.name }));
+        continue;
+      }
+      if (!extension || !ALLOWED_IMAGE_EXTENSIONS.has(extension) || !imageMime) {
+        validationErrors.push(t('admin.products.imageFileTypeInvalid', { name: file.name }));
+        continue;
+      }
+      if (file.size > MAX_IMAGE_UPLOAD_BYTES) {
+        validationErrors.push(t('admin.products.imageFileTooLarge', { name: file.name, maxMb: MAX_IMAGE_UPLOAD_MB }));
+        continue;
+      }
+      validFiles.push(file);
+    }
+    if (validFiles.length === 0) {
+      setImageUploadError(validationErrors.join('\n') || t('admin.products.imageUploadFailed'));
+      return;
+    }
+    openCropDialogForImages(validFiles, validationErrors);
+  };
+
+  const applyCropAndUpload = async (keepOriginal = false) => {
+    if (!cropSourceFile || cropProcessing) {
+      return;
+    }
+    const validationErrors = [...cropValidationErrors];
+    const remainingFiles = [...cropPendingFiles];
+    const originalFile = cropSourceFile;
+    const cropX = cropXPercent;
+    const cropY = cropYPercent;
+    const zoom = cropZoom;
+
+    setCropProcessing(true);
+    let firstFile = originalFile;
+    if (!keepOriginal) {
+      try {
+        firstFile = await cropImageFile(originalFile, {
+          xPercent: cropX,
+          yPercent: cropY,
+          zoom,
+          aspectRatio: PRODUCT_THUMBNAIL_ASPECT_RATIO,
+          outputWidth: PRODUCT_THUMBNAIL_OUTPUT_WIDTH,
+          outputHeight: PRODUCT_THUMBNAIL_OUTPUT_HEIGHT
+        });
+      } catch {
+        validationErrors.push(t('admin.products.imageCropFailed', { name: originalFile.name }));
+      }
+    }
+
+    resetCropState();
+    await uploadValidatedFiles([firstFile, ...remainingFiles], validationErrors);
+  };
+
+  const cancelCropDialog = () => {
+    const validationErrors = [...cropValidationErrors];
+    resetCropState();
+    setImageUploadError(validationErrors.join('\n'));
+  };
+
+  const removeImageAt = (index: number) => {
+    setForm((prev: any) => {
+      const images = Array.isArray(prev.images) ? prev.images : [];
+      return { ...prev, images: images.filter((_: string, imageIndex: number) => imageIndex !== index) };
+    });
+  };
+
+  const loadMediaLibrary = async () => {
+    setMediaLoading(true);
+    try {
+      const rows = await api.listMediaImages();
+      setMediaItems(rows);
+      setMediaError('');
+    } catch (err) {
+      setMediaError(err instanceof Error ? err.message : t('admin.products.imageLibraryLoadFailed'));
+    } finally {
+      setMediaLoading(false);
+    }
+  };
+
+  const openMediaPicker = () => {
+    setSelectedMediaPaths({});
+    setMediaSearch('');
+    setMediaPickerOpen(true);
+    void loadMediaLibrary();
+  };
+
+  const closeMediaPicker = (nextOpen: boolean) => {
+    setMediaPickerOpen(nextOpen);
+    if (!nextOpen) {
+      setSelectedMediaPaths({});
+      setMediaSearch('');
+    }
+  };
+
+  const toggleMediaPath = (path: string) => {
+    setSelectedMediaPaths(prev => ({ ...prev, [path]: !prev[path] }));
+  };
+
+  const applySelectedMedia = () => {
+    const selectedPaths = Object.entries(selectedMediaPaths)
+      .filter(([, selected]) => selected)
+      .map(([path]) => path);
+    if (selectedPaths.length === 0) {
+      return;
+    }
+    setForm((prev: any) => ({
+      ...prev,
+      images: mergeImageUrls(Array.isArray(prev.images) ? prev.images : [], selectedPaths)
+    }));
+    closeMediaPicker(false);
   };
 
   const handleCategoryChange = (value: string) => {
@@ -172,7 +501,7 @@ export default function AdminProductsPage() {
       price: Number(form.price),
       currentStock: Number(form.currentStock),
       isActive: String(form.isActive) === 'true',
-      images: form.images,
+      images: Array.isArray(form.images) ? form.images : [],
       regenerateSku: editing ? Boolean(form.regenerateSku) : undefined
     };
     try {
@@ -311,6 +640,15 @@ export default function AdminProductsPage() {
   };
 
   const categoryOptions = [...categories];
+  const filteredMediaItems = useMemo(() => {
+    const query = mediaSearch.trim().toLowerCase();
+    if (!query) return mediaItems;
+    return mediaItems.filter(item => String(item.fileName || '').toLowerCase().includes(query));
+  }, [mediaItems, mediaSearch]);
+  const selectedMediaCount = useMemo(
+    () => Object.values(selectedMediaPaths).filter(Boolean).length,
+    [selectedMediaPaths]
+  );
   const categoryFilterOptions = useMemo(() => {
     const names = new Set<string>();
     items.forEach(item => {
@@ -324,9 +662,13 @@ export default function AdminProductsPage() {
     return items.filter(item => String(item.category || '').trim().toLowerCase() === categoryFilter.toLowerCase());
   }, [items, categoryFilter]);
   const selectedCategory = String(form.category || '').trim();
+  const selectedImageCount = Array.isArray(form.images) ? form.images.length : 0;
   const hasSelectedCategoryInList = selectedCategory
     ? categories.some(category => category.name.toLowerCase() === selectedCategory.toLowerCase())
     : false;
+  const resetCategoryFilter = () => {
+    setCategoryFilter(ALL_CATEGORIES_FILTER);
+  };
 
   return (
     <>
@@ -350,6 +692,9 @@ export default function AdminProductsPage() {
                     </option>
                   ))}
                 </Select>
+                <Button type="button" variant="outline" onClick={resetCategoryFilter}>
+                  {t('admin.products.filterReset')}
+                </Button>
                 <Button variant="outline" onClick={openCategoryManager}>
                   {t('admin.products.manageCategories')}
                 </Button>
@@ -531,6 +876,67 @@ export default function AdminProductsPage() {
                     <option value="false">{t('admin.products.inactive')}</option>
                   </Select>
                 </FormField>
+                <div className="space-y-2">
+                  <span className="text-sm font-semibold text-muted">{t('admin.products.images')}</span>
+                  <input
+                    ref={imageInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={e => {
+                      const files = e.target.files;
+                      void uploadProductImages(files);
+                      e.currentTarget.value = '';
+                    }}
+                  />
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Button type="button" variant="outline" className="shrink-0" onClick={() => imageInputRef.current?.click()}>
+                      {t('admin.products.imageAdd')}
+                    </Button>
+                    <Button type="button" variant="outline" className="shrink-0" onClick={openMediaPicker}>
+                      {t('admin.products.imageLibrary')}
+                    </Button>
+                    <p className="text-xs text-muted">
+                      {imageUploading
+                        ? t('admin.products.imageUploading')
+                        : selectedImageCount > 0
+                          ? t('admin.products.imagesSelectedCount', { count: selectedImageCount })
+                          : t('admin.products.imagesEmpty')}
+                    </p>
+                  </div>
+                  {imageUploadError ? <p className="whitespace-pre-line text-xs text-red-600">{imageUploadError}</p> : null}
+                  <p className="mt-1 text-xs text-muted">{t('admin.products.imagesHint')}</p>
+                  <div className="mt-2 rounded-xl border border-border bg-cream p-3">
+                    {Array.isArray(form.images) && form.images.length > 0 ? (
+                      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                        {form.images.slice(0, 8).map((url: string, index: number) => (
+                          <div key={`${url}-${index}`} className="group relative">
+                            <img
+                              src={resolveProductImageUrl(url)}
+                              alt={`preview-${index + 1}`}
+                              className="h-16 w-full rounded-lg border border-border object-cover"
+                              onError={event => {
+                                event.currentTarget.style.display = 'none';
+                              }}
+                            />
+                            <button
+                              type="button"
+                              className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/70 text-xs text-white opacity-0 transition group-hover:opacity-100"
+                              title={t('admin.products.imageRemove')}
+                              aria-label={t('admin.products.imageRemove')}
+                              onClick={() => removeImageAt(index)}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted">{t('admin.products.imagesEmpty')}</p>
+                    )}
+                  </div>
+                </div>
                 <div className="grid gap-2 sm:grid-cols-3">
                   <Button type="button" variant="ghost" onClick={() => closeProductModal(false)}>
                     {t('common.close')}
@@ -541,6 +947,171 @@ export default function AdminProductsPage() {
                   <Button>{t('common.save')}</Button>
                 </div>
               </form>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={mediaPickerOpen} onOpenChange={closeMediaPicker}>
+            <DialogContent className="max-w-4xl">
+              <DialogHeader>
+                <DialogTitle>{t('admin.products.imageLibraryTitle')}</DialogTitle>
+              </DialogHeader>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Input
+                  value={mediaSearch}
+                  onChange={event => setMediaSearch(event.target.value)}
+                  placeholder={t('admin.products.imageLibrarySearch')}
+                  className="min-w-[220px] sm:max-w-[320px]"
+                />
+                <div className="flex items-center gap-2">
+                  <Button type="button" variant="outline" onClick={() => void loadMediaLibrary()} disabled={mediaLoading}>
+                    {t('admin.products.imageLibraryRefresh')}
+                  </Button>
+                  <span className="text-xs text-muted">{t('admin.products.imageLibrarySelected', { count: selectedMediaCount })}</span>
+                </div>
+              </div>
+              <div className="mt-2 max-h-[58vh] overflow-auto rounded-xl border border-border bg-cream p-3">
+                {mediaLoading ? (
+                  <p className="text-sm text-muted">{t('admin.products.imageLibraryLoading')}</p>
+                ) : mediaError ? (
+                  <p className="text-sm text-red-600">{mediaError}</p>
+                ) : filteredMediaItems.length === 0 ? (
+                  <p className="text-sm text-muted">{t('admin.products.imageLibraryEmpty')}</p>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {filteredMediaItems.map(item => {
+                      const selected = !!selectedMediaPaths[item.path];
+                      return (
+                        <button
+                          key={item.fileName}
+                          type="button"
+                          className={`rounded-xl border p-2 text-left transition ${
+                            selected ? 'border-accent bg-[#fff7ef]' : 'border-border bg-white hover:border-accent/60'
+                          }`}
+                          onClick={() => toggleMediaPath(item.path)}
+                        >
+                          <img
+                            src={resolveProductImageUrl(item.url)}
+                            alt={item.fileName}
+                            className="aspect-[16/9] w-full rounded-lg border border-border object-cover"
+                            onError={event => {
+                              event.currentTarget.style.display = 'none';
+                            }}
+                          />
+                          <div className="mt-2 flex items-center justify-between gap-2">
+                            <p className="truncate text-xs font-semibold text-ink" title={item.fileName}>
+                              {item.fileName}
+                            </p>
+                            <span className="text-xs text-muted">{selected ? '✓' : ''}</span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                <Button type="button" variant="ghost" onClick={() => closeMediaPicker(false)}>
+                  {t('common.close')}
+                </Button>
+                <Button type="button" variant="outline" onClick={() => closeMediaPicker(false)}>
+                  {t('common.cancel')}
+                </Button>
+                <Button type="button" onClick={applySelectedMedia} disabled={selectedMediaCount === 0}>
+                  {t('admin.products.imageLibraryApply')}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog
+            open={cropDialogOpen}
+            onOpenChange={nextOpen => {
+              if (!nextOpen) {
+                cancelCropDialog();
+              }
+            }}
+          >
+            <DialogContent className="max-w-3xl">
+              <DialogHeader>
+                <DialogTitle>{t('admin.products.imageCropTitle')}</DialogTitle>
+              </DialogHeader>
+              <p className="text-sm text-muted">{t('admin.products.imageCropHint')}</p>
+              <div className="mt-3 overflow-hidden rounded-xl border border-border bg-[#f8f1e8]">
+                {cropSourceUrl ? (
+                  <div className="aspect-[16/9] w-full">
+                    <img
+                      src={cropSourceUrl}
+                      alt={cropSourceFile?.name || 'crop-preview'}
+                      className="h-full w-full object-cover"
+                      style={{
+                        objectPosition: `${cropXPercent}% ${cropYPercent}%`,
+                        transform: `scale(${cropZoom})`,
+                        transformOrigin: 'center center'
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <div className="flex aspect-[16/9] w-full items-center justify-center text-sm text-muted">{t('admin.products.imagesEmpty')}</div>
+                )}
+              </div>
+              <div className="mt-3 space-y-3">
+                <div>
+                  <div className="mb-1 flex items-center justify-between text-xs text-muted">
+                    <span>{t('admin.products.imageCropZoom')}</span>
+                    <span>{cropZoom.toFixed(2)}x</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={1}
+                    max={3}
+                    step={0.01}
+                    value={cropZoom}
+                    onChange={event => setCropZoom(Number(event.target.value))}
+                    className="w-full accent-accent"
+                  />
+                </div>
+                <div>
+                  <div className="mb-1 flex items-center justify-between text-xs text-muted">
+                    <span>{t('admin.products.imageCropHorizontal')}</span>
+                    <span>{Math.round(cropXPercent)}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={cropXPercent}
+                    onChange={event => setCropXPercent(Number(event.target.value))}
+                    className="w-full accent-accent"
+                  />
+                </div>
+                <div>
+                  <div className="mb-1 flex items-center justify-between text-xs text-muted">
+                    <span>{t('admin.products.imageCropVertical')}</span>
+                    <span>{Math.round(cropYPercent)}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={cropYPercent}
+                    onChange={event => setCropYPercent(Number(event.target.value))}
+                    className="w-full accent-accent"
+                  />
+                </div>
+              </div>
+              <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                <Button type="button" variant="ghost" onClick={cancelCropDialog} disabled={cropProcessing}>
+                  {t('admin.products.imageCropCancel')}
+                </Button>
+                <Button type="button" variant="outline" onClick={() => void applyCropAndUpload(true)} disabled={cropProcessing}>
+                  {t('admin.products.imageCropKeepOriginal')}
+                </Button>
+                <Button type="button" onClick={() => void applyCropAndUpload(false)} disabled={cropProcessing}>
+                  {t('admin.products.imageCropApply')}
+                </Button>
+              </div>
             </DialogContent>
           </Dialog>
 

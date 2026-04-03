@@ -4,17 +4,26 @@ import {
   AuditLogListItem,
   BakeRecord,
   DatabaseBackupDetail,
+  DatabaseBackupDirectory,
   DatabaseBackupFileSummary,
+  DatabaseBackupSource,
   DatabaseBackupResponse,
   DatabaseCollection,
   DatabaseCollectionFields,
+  DatabaseDeleteBackupResponse,
+  DatabaseDependencyCheckResponse,
+  DatabaseDependencyResolveOperation,
+  DatabaseDependencyResolveResponse,
   DatabaseFilterCondition,
+  DatabaseOpenDirectoryResponse,
   DatabaseQueryResponse,
   DatabaseQueryRow,
   DatabaseRestoreBackupResponse,
   DatabaseUnlockResponse,
+  DatabaseWipeResponse,
   DashboardData,
   Ingredient,
+  MediaImage,
   IngredientTransaction,
   Order,
   OrderStatusTimelineEntry,
@@ -135,6 +144,34 @@ export const api = {
   createProduct: (payload: Partial<Product>) => request<Product>('/api/admin/products', { method: 'POST', body: JSON.stringify(payload) }),
   updateProduct: (id: string, payload: Partial<Product>) => request<Product>(`/api/admin/products/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
   deleteProduct: (id: string) => request<void>(`/api/admin/products/${id}`, { method: 'DELETE' }),
+  uploadProductImage: async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${API_URL}/api/admin/products/images/upload`, {
+      method: 'POST',
+      credentials: 'include',
+      body: formData
+    });
+
+    if (!response.ok) {
+      let message = `Request failed (${response.status})`;
+      let details: unknown = null;
+      try {
+        const data = await response.json();
+        message = data.message || message;
+        details = data.details;
+      } catch {
+        // keep default
+      }
+      throw new ApiError(message, response.status, details);
+    }
+
+    return response.json() as Promise<{ fileName: string; path: string; url: string }>;
+  },
+  listMediaImages: () => request<MediaImage[]>('/api/admin/media/images'),
+  deleteMediaImage: (fileName: string) =>
+    request<void>(`/api/admin/media/images/${encodeURIComponent(fileName)}`, { method: 'DELETE' }),
 
   listRecipes: () => request<Recipe[]>('/api/admin/recipes'),
   createRecipe: (payload: unknown) => request<Recipe>('/api/admin/recipes', { method: 'POST', body: JSON.stringify(payload) }),
@@ -152,9 +189,10 @@ export const api = {
     }),
   listMyOrders: () => request<Order[]>('/api/orders'),
 
-  listOrdersAdmin: (params: { status?: string; from?: string; to?: string } = {}) => {
+  listOrdersAdmin: (params: { status?: string; buyerName?: string; from?: string; to?: string } = {}) => {
     const search = new URLSearchParams();
     if (params.status) search.set('status', params.status);
+    if (params.buyerName) search.set('buyerName', params.buyerName);
     if (params.from) search.set('from', params.from);
     if (params.to) search.set('to', params.to);
     const query = search.toString();
@@ -218,24 +256,71 @@ export const api = {
       method: 'DELETE',
       headers: { 'X-Database-Access-Token': accessToken }
     }),
+  checkDatabaseDependencies: (accessToken: string, collection: string, documentId: string) =>
+    request<DatabaseDependencyCheckResponse>('/api/admin/database/dependencies/check', {
+      method: 'POST',
+      headers: { 'X-Database-Access-Token': accessToken },
+      body: JSON.stringify({ collection, documentId })
+    }),
+  resolveDatabaseDependencies: (
+    accessToken: string,
+    payload: {
+      targetCollection: string;
+      targetDocumentId: string;
+      operations: DatabaseDependencyResolveOperation[];
+    }
+  ) =>
+    request<DatabaseDependencyResolveResponse>('/api/admin/database/dependencies/resolve', {
+      method: 'POST',
+      headers: { 'X-Database-Access-Token': accessToken },
+      body: JSON.stringify(payload)
+    }),
+  wipeDatabaseData: (
+    accessToken: string,
+    payload: {
+      scope: 'COLLECTION' | 'DATABASE';
+      collection?: string;
+      confirmText: string;
+    }
+  ) =>
+    request<DatabaseWipeResponse>('/api/admin/database/wipe', {
+      method: 'POST',
+      headers: { 'X-Database-Access-Token': accessToken },
+      body: JSON.stringify(payload)
+    }),
   backupDatabase: (accessToken: string) =>
     request<DatabaseBackupResponse>('/api/admin/database/backup', {
       method: 'POST',
       headers: { 'X-Database-Access-Token': accessToken }
     }),
-  listDatabaseBackups: (accessToken: string) =>
-    request<DatabaseBackupFileSummary[]>('/api/admin/database/backups', {
+  getDatabaseBackupDirectory: (accessToken: string) =>
+    request<DatabaseBackupDirectory>('/api/admin/database/backup-directory', {
       headers: { 'X-Database-Access-Token': accessToken }
     }),
-  getDatabaseBackupDetail: (accessToken: string, fileName: string) =>
-    request<DatabaseBackupDetail>(`/api/admin/database/backups/${encodeURIComponent(fileName)}`, {
+  openDatabaseBackupDirectory: (accessToken: string) =>
+    request<DatabaseOpenDirectoryResponse>('/api/admin/database/backup-directory/open', {
+      method: 'POST',
       headers: { 'X-Database-Access-Token': accessToken }
     }),
-  restoreDatabaseBackup: (accessToken: string, fileName: string) =>
+  listDatabaseBackups: (accessToken: string, source: DatabaseBackupSource = 'LOCAL') =>
+    request<DatabaseBackupFileSummary[]>(`/api/admin/database/backups?source=${encodeURIComponent(source)}`, {
+      headers: { 'X-Database-Access-Token': accessToken }
+    }),
+  deleteDatabaseBackup: (accessToken: string, fileName: string, confirmText: string) =>
+    request<DatabaseDeleteBackupResponse>('/api/admin/database/backups/delete', {
+      method: 'POST',
+      headers: { 'X-Database-Access-Token': accessToken },
+      body: JSON.stringify({ fileName, confirmText })
+    }),
+  getDatabaseBackupDetail: (accessToken: string, fileName: string, source: DatabaseBackupSource = 'LOCAL') =>
+    request<DatabaseBackupDetail>(`/api/admin/database/backups/${encodeURIComponent(fileName)}?source=${encodeURIComponent(source)}`, {
+      headers: { 'X-Database-Access-Token': accessToken }
+    }),
+  restoreDatabaseBackup: (accessToken: string, fileName: string, source: DatabaseBackupSource = 'LOCAL') =>
     request<DatabaseRestoreBackupResponse>('/api/admin/database/backups/restore', {
       method: 'POST',
       headers: { 'X-Database-Access-Token': accessToken },
-      body: JSON.stringify({ fileName })
+      body: JSON.stringify({ fileName, source })
     }),
   exportDatabase: async (
     accessToken: string,

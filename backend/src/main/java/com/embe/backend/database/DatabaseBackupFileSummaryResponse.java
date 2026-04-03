@@ -6,6 +6,8 @@ public record DatabaseBackupFileSummaryResponse(
         String fileName,
         String filePath,
         Instant createdAt,
-        long sizeBytes
+        long sizeBytes,
+        String source,
+        String trigger
 ) {
 }

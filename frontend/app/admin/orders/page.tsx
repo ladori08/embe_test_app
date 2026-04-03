@@ -48,8 +48,10 @@ export default function AdminOrdersPage() {
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [timelineError, setTimelineError] = useState('');
   const [statusFilter, setStatusFilter] = useState<OrderStatus | ''>('');
+  const [buyerNameFilter, setBuyerNameFilter] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
+  const [userLabelById, setUserLabelById] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const { t, money } = useI18n();
 
@@ -71,12 +73,14 @@ export default function AdminOrdersPage() {
 
   const load = (filters?: {
     status?: OrderStatus | '';
+    buyerName?: string;
     fromDate?: string;
     toDate?: string;
   }) =>
     api
       .listOrdersAdmin({
         status: (filters?.status ?? statusFilter) || undefined,
+        buyerName: (filters?.buyerName ?? buyerNameFilter).trim() || undefined,
         from: toFilterFromIso(filters?.fromDate ?? fromDate),
         to: toFilterToIso(filters?.toDate ?? toDate)
       })
@@ -100,8 +104,28 @@ export default function AdminOrdersPage() {
     }
   };
 
+  const loadUsers = async () => {
+    try {
+      const users = await api.listUsersAdmin();
+      const nextUserLabelById: Record<string, string> = {};
+      users.forEach(user => {
+        const fullName = String(user.fullName || '').trim();
+        const email = String(user.email || '').trim();
+        nextUserLabelById[user.id] = fullName || email || user.id;
+      });
+      setUserLabelById(nextUserLabelById);
+    } catch {
+      setUserLabelById({});
+    }
+  };
+
+  const resolveUserLabel = (userId: string | null | undefined) => {
+    if (!userId) return t('admin.orders.guest');
+    return userLabelById[userId] || `${userId.slice(0, 6)}...`;
+  };
+
   useEffect(() => {
-    void load();
+    void Promise.all([load(), loadUsers()]);
   }, []);
 
   const updateStatus = async (id: string, status: OrderStatus) => {
@@ -133,9 +157,10 @@ export default function AdminOrdersPage() {
 
   const resetFilter = () => {
     setStatusFilter('');
+    setBuyerNameFilter('');
     setFromDate('');
     setToDate('');
-    void load({ status: '', fromDate: '', toDate: '' });
+    void load({ status: '', buyerName: '', fromDate: '', toDate: '' });
   };
 
   return (
@@ -145,7 +170,7 @@ export default function AdminOrdersPage() {
         <AdminShell title={t('admin.nav.orders')}>
           <Card>
             {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
-            <form className="mb-3 grid gap-2 md:grid-cols-[220px_180px_180px_120px_120px]" onSubmit={applyFilter}>
+            <form className="mb-3 grid gap-2 md:grid-cols-[220px_1fr_180px_180px_120px_120px]" onSubmit={applyFilter}>
               <Select value={statusFilter} onChange={e => setStatusFilter(e.target.value as OrderStatus | '')}>
                 <option value="">{t('admin.orders.filterAllStatuses')}</option>
                 <option value="NEW">{t('status.NEW')}</option>
@@ -154,6 +179,12 @@ export default function AdminOrdersPage() {
                 <option value="COMPLETED">{t('status.COMPLETED')}</option>
                 <option value="CANCELLED">{t('status.CANCELLED')}</option>
               </Select>
+              <Input
+                value={buyerNameFilter}
+                onChange={e => setBuyerNameFilter(e.target.value)}
+                placeholder={t('admin.orders.filterBuyerName')}
+                aria-label={t('admin.orders.filterBuyerName')}
+              />
               <Input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} aria-label={t('admin.orders.filterFrom')} />
               <Input type="date" value={toDate} onChange={e => setToDate(e.target.value)} aria-label={t('admin.orders.filterTo')} />
               <Button type="submit">{t('admin.orders.filterApply')}</Button>
@@ -181,7 +212,7 @@ export default function AdminOrdersPage() {
                       <TableRow key={order.id} className="cursor-pointer hover:bg-[#f8f1e8]/60" onClick={() => openDetail(order)}>
                         <TableCell>{order.id.slice(0, 8)}...</TableCell>
                         <TableCell>
-                          <div>{order.userId ? `${order.userId.slice(0, 6)}...` : t('admin.orders.guest')}</div>
+                          <div>{resolveUserLabel(order.userId)}</div>
                           <div className="text-xs text-muted">
                             {order.recipientName || '-'} · {order.recipientPhone || '-'}
                           </div>
@@ -248,7 +279,7 @@ export default function AdminOrdersPage() {
                     ) : null}
                     <p>
                       <strong>{t('admin.orders.user')}:</strong>{' '}
-                      {selectedOrder.userId ? `${selectedOrder.userId.slice(0, 6)}...` : t('admin.orders.guest')}
+                      {resolveUserLabel(selectedOrder.userId)}
                     </p>
                     <p>
                       <strong>{t('checkout.recipientName')}:</strong> {selectedOrder.recipientName || '-'}
@@ -258,6 +289,20 @@ export default function AdminOrdersPage() {
                     </p>
                     <p className="sm:col-span-2">
                       <strong>{t('checkout.deliveryAddress')}:</strong> {selectedOrder.deliveryAddress || '-'}
+                    </p>
+                    <p>
+                      <strong>{t('checkout.deliveryDate')}:</strong> {selectedOrder.deliveryDate || '-'}
+                    </p>
+                    <p>
+                      <strong>{t('checkout.deliveryTime')}:</strong> {selectedOrder.deliveryTime || '-'}
+                    </p>
+                    <p className="sm:col-span-2">
+                      <strong>{t('checkout.paymentMethod')}:</strong>{' '}
+                      {selectedOrder.paymentMethod === 'COD_DEPOSIT'
+                        ? t('checkout.paymentCodDeposit')
+                        : selectedOrder.paymentMethod === 'BANK_TRANSFER'
+                          ? t('checkout.paymentBankTransfer')
+                          : '-'}
                     </p>
                     <p className="sm:col-span-2">
                       <strong>{t('checkout.note')}:</strong> {selectedOrder.note || '-'}
@@ -320,6 +365,12 @@ export default function AdminOrdersPage() {
                       <span className="text-muted">{t('common.subtotal')}</span>
                       <span>{money(selectedOrder.subtotal)}</span>
                     </div>
+                    {selectedOrder.paymentMethod === 'COD_DEPOSIT' ? (
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted">{t('checkout.depositAmount')}</span>
+                        <span>{money(selectedOrder.total * 0.5)}</span>
+                      </div>
+                    ) : null}
                     {selectedOrder.tax > 0 ? (
                       <div className="flex items-center justify-between">
                         <span className="text-muted">{t('checkout.tax')}</span>

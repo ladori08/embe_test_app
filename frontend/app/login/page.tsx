@@ -9,10 +9,11 @@ import { Button } from '@/components/ui/button';
 import { FormField, FormMessage } from '@/components/ui/form';
 import { useAuth } from '@/components/auth-context';
 import { useI18n } from '@/components/language-context';
+import { hasRole } from '@/lib/permissions';
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login, user } = useAuth();
+  const { login, logout, user } = useAuth();
   const { t } = useI18n();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -24,8 +25,13 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      await login(email, password);
-      router.push('/shop');
+      const loggedInUser = await login(email, password);
+      if (!hasRole(loggedInUser, 'ADMIN')) {
+        await logout();
+        setError(t('login.adminOnly'));
+        return;
+      }
+      router.push('/admin/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : t('login.failed'));
     } finally {

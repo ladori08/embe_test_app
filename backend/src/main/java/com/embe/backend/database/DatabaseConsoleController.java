@@ -61,6 +61,30 @@ public class DatabaseConsoleController {
         return databaseConsoleService.query(accessToken, request);
     }
 
+    @PostMapping("/dependencies/check")
+    public DatabaseDependencyCheckResponse checkDependencies(
+            @RequestHeader(name = ACCESS_TOKEN_HEADER) String accessToken,
+            @Valid @RequestBody DatabaseDependencyCheckRequest request
+    ) {
+        return databaseConsoleService.checkDependencies(accessToken, request.collection(), request.documentId());
+    }
+
+    @PostMapping("/dependencies/resolve")
+    public DatabaseDependencyResolveResponse resolveDependencies(
+            @RequestHeader(name = ACCESS_TOKEN_HEADER) String accessToken,
+            @Valid @RequestBody DatabaseDependencyResolveRequest request
+    ) {
+        return databaseConsoleService.resolveDependencies(accessToken, request);
+    }
+
+    @PostMapping("/wipe")
+    public DatabaseWipeResponse wipe(
+            @RequestHeader(name = ACCESS_TOKEN_HEADER) String accessToken,
+            @Valid @RequestBody DatabaseWipeRequest request
+    ) {
+        return databaseConsoleService.wipe(accessToken, request);
+    }
+
     @PutMapping("/documents/{collection}/{id}")
     public DatabaseQueryRow updateDocument(
             @RequestHeader(name = ACCESS_TOKEN_HEADER) String accessToken,
@@ -87,19 +111,43 @@ public class DatabaseConsoleController {
         return databaseConsoleService.backup(accessToken);
     }
 
-    @GetMapping("/backups")
-    public List<DatabaseBackupFileSummaryResponse> listBackups(
+    @GetMapping("/backup-directory")
+    public DatabaseBackupDirectoryResponse backupDirectory(
             @RequestHeader(name = ACCESS_TOKEN_HEADER) String accessToken
     ) {
-        return databaseConsoleService.listBackups(accessToken);
+        return databaseConsoleService.getBackupDirectory(accessToken);
+    }
+
+    @PostMapping("/backup-directory/open")
+    public DatabaseOpenDirectoryResponse openBackupDirectory(
+            @RequestHeader(name = ACCESS_TOKEN_HEADER) String accessToken
+    ) {
+        return databaseConsoleService.openBackupDirectory(accessToken);
+    }
+
+    @GetMapping("/backups")
+    public List<DatabaseBackupFileSummaryResponse> listBackups(
+            @RequestHeader(name = ACCESS_TOKEN_HEADER) String accessToken,
+            @RequestParam(defaultValue = "LOCAL") String source
+    ) {
+        return databaseConsoleService.listBackups(accessToken, source);
+    }
+
+    @PostMapping("/backups/delete")
+    public DatabaseDeleteBackupResponse deleteBackup(
+            @RequestHeader(name = ACCESS_TOKEN_HEADER) String accessToken,
+            @Valid @RequestBody DatabaseDeleteBackupRequest request
+    ) {
+        return databaseConsoleService.deleteBackup(accessToken, request.fileName(), request.confirmText());
     }
 
     @GetMapping("/backups/{fileName:.+}")
     public DatabaseBackupDetailResponse backupDetail(
             @RequestHeader(name = ACCESS_TOKEN_HEADER) String accessToken,
-            @PathVariable String fileName
+            @PathVariable String fileName,
+            @RequestParam(defaultValue = "LOCAL") String source
     ) {
-        return databaseConsoleService.getBackupDetail(accessToken, fileName);
+        return databaseConsoleService.getBackupDetail(accessToken, fileName, source);
     }
 
     @PostMapping("/backups/restore")
@@ -107,7 +155,7 @@ public class DatabaseConsoleController {
             @RequestHeader(name = ACCESS_TOKEN_HEADER) String accessToken,
             @Valid @RequestBody DatabaseRestoreBackupRequest request
     ) {
-        return databaseConsoleService.restoreBackup(accessToken, request.fileName());
+        return databaseConsoleService.restoreBackup(accessToken, request.fileName(), request.source());
     }
 
     @PostMapping("/export")

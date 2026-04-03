@@ -38,3 +38,8 @@ frontend/package-lock.json
 frontend/tsconfig.tsbuildinfo
 reports/
 backups/
+logs/
+infra/uploads/product-images/
+!infra/uploads/.gitkeep
+.env.prod
+.env.prod.local

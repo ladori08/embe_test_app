@@ -83,6 +83,11 @@ const normalizeIngredientCode = (value: string) => {
   return normalized;
 };
 const normalizeIngredientKey = (name: string, unit: string) => `${name.trim().toLowerCase()}::${unit.trim().toLowerCase()}`;
+const timestamp = (value: string | null | undefined) => {
+  if (!value) return 0;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+};
 
 export default function AdminIngredientsPage() {
   const [items, setItems] = useState<Ingredient[]>([]);
@@ -133,6 +138,15 @@ export default function AdminIngredientsPage() {
       return [];
     }
   }, [importText]);
+  const sortedItems = useMemo(
+    () =>
+      [...items].sort((a, b) =>
+        String(a.name || '').localeCompare(String(b.name || ''), 'vi', {
+          sensitivity: 'base'
+        })
+      ),
+    [items]
+  );
 
   const loadIngredients = async () => {
     setLoading(true);
@@ -344,7 +358,7 @@ export default function AdminIngredientsPage() {
       });
       const normalized = rows
         .slice()
-        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        .sort((a, b) => timestamp(a.createdAt) - timestamp(b.createdAt));
       setLotsByIngredient(prev => ({ ...prev, [ingredientId]: normalized }));
     } catch (err) {
       setLotError(prev => ({
@@ -715,7 +729,7 @@ export default function AdminIngredientsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {items.map(item => {
+                    {sortedItems.map(item => {
                       const isExpanded = !!expandedLots[item.id];
                       const lots = lotsByIngredient[item.id] || [];
                       const isLotLoading = !!lotLoading[item.id];
