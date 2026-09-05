@@ -54,7 +54,7 @@ export default function ProductDetailPage() {
   return (
     <>
       <TopNav />
-      <main className="mx-auto max-w-4xl px-4 py-8">
+      <main className="mx-auto max-w-4xl px-3 py-5 sm:px-4 sm:py-8">
         <Link href="/shop" className="text-sm text-muted underline">
           {t('product.backToShop')}
         </Link>
@@ -62,15 +62,15 @@ export default function ProductDetailPage() {
         {error && <Card className="mt-3 text-red-600">{error}</Card>}
         {product && (
           <Card className="mt-3 reveal">
-            <h1 className="font-script text-5xl">{product.name}</h1>
+            <h1 className="break-words font-script text-4xl sm:text-5xl">{product.name}</h1>
             <p className="mt-2 text-muted">{product.category}</p>
-            <div className="mt-4 flex items-center gap-3">
+            <div className="mt-4 flex flex-wrap items-center gap-3">
               <span className="text-2xl font-semibold">{moneyCompact(product.price)}</span>
               <Badge>{t('product.stock', { stock: remainingStock })}</Badge>
             </div>
             <p className="mt-3 text-sm text-muted">{t('product.description')}</p>
             {stockWarning ? <p className="mt-2 text-sm text-red-600">{stockWarning}</p> : null}
-            <div className="mt-4 flex items-center gap-3">
+            <div className="mt-4 flex flex-wrap items-center gap-3">
               <span className="text-sm text-muted">{t('shop.quantity')}</span>
               <div className="flex items-center gap-2">
                 <Button
@@ -94,8 +94,9 @@ export default function ProductDetailPage() {
                 </Button>
               </div>
             </div>
-            <div className="mt-5 flex gap-3">
+            <div className="mt-5 grid gap-3 sm:flex">
               <Button
+                className="w-full sm:w-auto"
                 onClick={() => {
                   const result = addItem(product, selectedQty);
                   if (!result.ok) {
@@ -109,8 +110,8 @@ export default function ProductDetailPage() {
               >
                 {t('shop.addToCart')}
               </Button>
-              <Link href="/shop/cart">
-                <Button variant="outline">{t('product.viewCart')}</Button>
+              <Link href="/shop/cart" className="w-full sm:w-auto">
+                <Button variant="outline" className="w-full sm:w-auto">{t('product.viewCart')}</Button>
               </Link>
             </div>
           </Card>

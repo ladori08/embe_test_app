@@ -35,9 +35,31 @@ import {
   User
 } from '@/lib/types';
 
-export const API_URL =
+const CONFIGURED_API_URL =
   (globalThis as typeof globalThis & { process?: { env?: Record<string, string | undefined> } }).process?.env?.NEXT_PUBLIC_API_URL ||
   'http://localhost:8080';
+
+const LOCAL_API_HOST_PATTERN = /^(localhost|127\.0\.0\.1|0\.0\.0\.0)$/;
+
+export function getApiUrl() {
+  if (typeof window === 'undefined') {
+    return CONFIGURED_API_URL;
+  }
+
+  try {
+    const configured = new URL(CONFIGURED_API_URL);
+    const pageHost = window.location.hostname;
+    if (LOCAL_API_HOST_PATTERN.test(configured.hostname) && !LOCAL_API_HOST_PATTERN.test(pageHost)) {
+      return '';
+    }
+  } catch {
+    // Fall back below if the configured value is malformed.
+  }
+
+  return CONFIGURED_API_URL;
+}
+
+export const API_URL = CONFIGURED_API_URL;
 
 class ApiError extends Error {
   status: number;
@@ -54,7 +76,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers || undefined);
   headers.set('Content-Type', 'application/json');
 
-  const response = await fetch(`${API_URL}${path}`, {
+  const response = await fetch(`${getApiUrl()}${path}`, {
     ...options,
     credentials: 'include',
     headers
@@ -148,7 +170,7 @@ export const api = {
     const formData = new FormData();
     formData.append('file', file);
 
-    const response = await fetch(`${API_URL}/api/admin/products/images/upload`, {
+    const response = await fetch(`${getApiUrl()}/api/admin/products/images/upload`, {
       method: 'POST',
       credentials: 'include',
       body: formData
@@ -332,7 +354,7 @@ export const api = {
       sortDirection?: 'ASC' | 'DESC';
     }
   ) => {
-    const response = await fetch(`${API_URL}/api/admin/database/export?format=${encodeURIComponent(format)}`, {
+    const response = await fetch(`${getApiUrl()}/api/admin/database/export?format=${encodeURIComponent(format)}`, {
       method: 'POST',
       credentials: 'include',
       headers: {

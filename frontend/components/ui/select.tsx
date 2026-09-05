@@ -162,10 +162,10 @@ export function Select({ className, children, value, defaultValue, onChange, dis
   const ariaLabelledBy = (props as Record<string, unknown>)['aria-labelledby'] as string | undefined;
 
   return (
-    <div ref={containerRef} className={cn('relative', className)}>
+    <div ref={containerRef} className={cn('relative min-w-0', className)}>
       <input
         className={cn(
-          'h-10 w-full rounded-xl border border-border bg-cream px-3 pr-8 text-sm outline-none transition focus:border-accent',
+          'h-10 w-full min-w-0 rounded-xl border border-border bg-cream px-3 pr-8 text-sm outline-none transition focus:border-accent',
           disabled ? 'cursor-not-allowed opacity-60' : ''
         )}
         value={inputValue}

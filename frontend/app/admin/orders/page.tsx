@@ -361,23 +361,23 @@ export default function AdminOrdersPage() {
                   </div>
 
                   <div className="space-y-1 border-t border-border pt-3">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="text-muted">{t('common.subtotal')}</span>
                       <span>{money(selectedOrder.subtotal)}</span>
                     </div>
                     {selectedOrder.paymentMethod === 'COD_DEPOSIT' ? (
-                      <div className="flex items-center justify-between">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
                         <span className="text-muted">{t('checkout.depositAmount')}</span>
                         <span>{money(selectedOrder.total * 0.5)}</span>
                       </div>
                     ) : null}
                     {selectedOrder.tax > 0 ? (
-                      <div className="flex items-center justify-between">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
                         <span className="text-muted">{t('checkout.tax')}</span>
                         <span>{money(selectedOrder.tax)}</span>
                       </div>
                     ) : null}
-                    <div className="flex items-center justify-between text-base font-semibold">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-base font-semibold">
                       <span>{t('common.total')}</span>
                       <span>{money(selectedOrder.total)}</span>
                     </div>

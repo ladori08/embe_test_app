@@ -162,7 +162,7 @@ export default function AdminUsersPage() {
       <RequireRole role="ADMIN">
         <AdminShell title={t('admin.nav.users')}>
           <Card>
-            <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <p className="text-sm text-muted">{t('admin.users.help')}</p>
               <Button onClick={openCreate}>{t('admin.users.add')}</Button>
             </div>

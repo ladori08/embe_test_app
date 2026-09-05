@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { API_URL, api } from '@/lib/api';
+import { api, getApiUrl } from '@/lib/api';
 import { Product } from '@/lib/types';
 
 const STOCK_POLL_INTERVAL_MS = 15000;
@@ -124,7 +124,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     refreshStockSnapshot();
 
-    const source = new EventSource(`${API_URL}/api/products/public/stock-events`);
+    const source = new EventSource(`${getApiUrl()}/api/products/public/stock-events`);
     source.addEventListener('stock_changed', event => {
       try {
         const payload = JSON.parse((event as MessageEvent<string>).data) as { productId: string; currentStock: number };
