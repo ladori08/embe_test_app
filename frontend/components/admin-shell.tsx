@@ -61,22 +61,22 @@ export function AdminShell({ children, title }: { children: React.ReactNode; tit
   ];
 
   return (
-    <div className="mx-auto grid w-full grid-cols-1 gap-6 px-3 py-6 sm:px-4 lg:grid-cols-[240px_minmax(0,1fr)] xl:px-6 2xl:px-8">
+    <div className="mx-auto grid w-full grid-cols-1 gap-4 px-3 py-4 sm:px-4 sm:py-6 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-6 xl:px-6 2xl:px-8">
       <aside
-        className="rounded-2xl border border-border bg-white p-3 shadow-card transition-[top,transform,box-shadow] duration-300 ease-out lg:sticky lg:max-h-[calc(100vh-100px)] lg:self-start lg:overflow-auto"
+        className="sticky top-[68px] z-10 rounded-2xl border border-border bg-white/95 p-2 shadow-card backdrop-blur transition-[top,transform,box-shadow] duration-300 ease-out lg:top-auto lg:p-3 lg:sticky lg:max-h-[calc(100vh-100px)] lg:self-start lg:overflow-auto"
         style={{
-          top: compactSidebar ? '74px' : '90px',
+          top: compactSidebar ? '64px' : '74px',
           transform: compactSidebar ? 'translateY(-2px)' : 'translateY(0)'
         }}
       >
-        <h2 className="px-2 pb-2 text-sm font-semibold uppercase tracking-wide text-muted">{t('admin.panel')}</h2>
-        <div className="space-y-1">
+        <h2 className="hidden px-2 pb-2 text-sm font-semibold uppercase tracking-wide text-muted lg:block">{t('admin.panel')}</h2>
+        <div className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 lg:mx-0 lg:block lg:space-y-1 lg:overflow-visible lg:px-0 lg:pb-0">
           {links.map(link => (
             <Link
               key={link.href}
               href={link.href}
               className={cn(
-                'block rounded-lg px-3 py-2 text-sm transition-colors',
+                'block shrink-0 whitespace-nowrap rounded-lg px-3 py-2 text-sm transition-colors lg:shrink lg:whitespace-normal',
                 pathname === link.href
                   ? 'bg-accent text-white shadow-sm'
                   : 'text-muted hover:bg-[#f5ede3] hover:text-ink'
@@ -88,8 +88,8 @@ export function AdminShell({ children, title }: { children: React.ReactNode; tit
         </div>
       </aside>
       <main className="min-w-0">
-        <div className="mb-4 flex items-center justify-between rounded-2xl border border-border bg-white px-4 py-3 shadow-card">
-          <h1 className="text-xl font-semibold">{title}</h1>
+        <div className="mb-4 flex min-w-0 items-center justify-between rounded-2xl border border-border bg-white px-4 py-3 shadow-card">
+          <h1 className="min-w-0 text-lg font-semibold sm:text-xl">{title}</h1>
         </div>
         {children}
       </main>

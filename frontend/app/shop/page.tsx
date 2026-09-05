@@ -150,30 +150,30 @@ export default function ShopPage() {
   return (
     <>
       <TopNav />
-      <main className="mx-auto max-w-6xl px-4 pb-16 pt-8">
-        <section className="relative mb-10 overflow-hidden rounded-3xl border border-border bg-white p-8 shadow-card reveal">
+      <main className="mx-auto max-w-6xl px-3 pb-12 pt-4 sm:px-4 sm:pb-16 sm:pt-8">
+        <section className="relative mb-8 overflow-hidden rounded-2xl border border-border bg-white p-5 shadow-card reveal sm:mb-10 sm:rounded-3xl sm:p-8">
           <Doodle className="scribble -right-2 top-3" />
           <Doodle className="scribble bottom-2 left-2" />
           <p className="text-sm uppercase tracking-[0.2em] text-muted">{t('shop.heroTag')}</p>
           <h1
-            className="mt-2 max-w-2xl text-5xl leading-tight text-ink"
+            className="mt-2 max-w-2xl text-4xl leading-tight text-ink sm:text-5xl"
             style={{ fontFamily: 'LazyDog, "Comic Sans MS", "Comic Sans", cursive' }}
           >
             {t('shop.heroTitle')}
           </h1>
           <p className="mt-3 max-w-xl text-muted">{t('shop.heroDesc')}</p>
-          <div className="mt-6 flex gap-3">
-            <Button onClick={() => setCartOpen(true)}>
+          <div className="mt-6 grid gap-3 sm:flex">
+            <Button className="w-full sm:w-auto" onClick={() => setCartOpen(true)}>
               <ShoppingBag className="mr-2 h-4 w-4" /> {t('shop.cartCta', { count: itemCount })}
             </Button>
-            <Link href="/shop/checkout">
-              <Button variant="outline">{t('shop.quickCheckout')}</Button>
+            <Link href="/shop/checkout" className="w-full sm:w-auto">
+              <Button variant="outline" className="w-full sm:w-auto">{t('shop.quickCheckout')}</Button>
             </Link>
           </div>
         </section>
 
         <section>
-          <div className="mb-4 flex items-center justify-between">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-2xl font-semibold">{t('shop.title')}</h2>
             <Badge>{t('shop.itemsCount', { count: products.length })}</Badge>
           </div>
@@ -214,11 +214,11 @@ export default function ShopPage() {
                   <CardTitle>{product.name}</CardTitle>
                   <CardDescription>{product.category}</CardDescription>
                   <CardContent className="space-y-3">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="text-lg font-semibold">{moneyCompact(product.price)}</span>
                       <Badge>{t('shop.stock', { stock: remainingStock })}</Badge>
                     </div>
-                    <div className="flex items-center justify-between" onClick={event => event.stopPropagation()}>
+                    <div className="flex flex-wrap items-center justify-between gap-2" onClick={event => event.stopPropagation()}>
                       <span className="text-sm text-muted">{t('shop.quantity')}</span>
                       <div className="flex items-center gap-2">
                         <Button
@@ -242,10 +242,10 @@ export default function ShopPage() {
                         </Button>
                       </div>
                     </div>
-                    <div className="flex gap-2" onClick={event => event.stopPropagation()}>
+                    <div className="grid gap-2 sm:flex" onClick={event => event.stopPropagation()}>
                       <Button
                         onClick={() => addProductToCart(product, pickedQty, true)}
-                        className="flex-1"
+                        className="w-full sm:flex-1"
                         disabled={remainingStock <= 0 || pickedQty <= 0}
                       >
                         {t('shop.addToCart')}
@@ -253,7 +253,7 @@ export default function ShopPage() {
                       <Button
                         type="button"
                         variant="outline"
-                        className="px-3"
+                        className="w-full px-3 sm:w-auto"
                         onClick={() => addProductToCart(product, 1, false)}
                         disabled={remainingStock <= 0}
                       >
@@ -300,7 +300,7 @@ export default function ShopPage() {
                 </div>
               ) : null}
               <p className="text-sm text-muted">{detailProduct.category}</p>
-              <div className="mt-4 flex items-center gap-3">
+              <div className="mt-4 flex flex-wrap items-center gap-3">
                 <span className="text-xl font-semibold">{moneyCompact(detailProduct.price)}</span>
                 <Badge>{t('product.stock', { stock: getRemainingStock(detailProduct) })}</Badge>
               </div>
@@ -344,9 +344,10 @@ export default function ShopPage() {
                   </Button>
                 </div>
               </div>
-              <div className="mt-5 flex flex-wrap gap-2">
+              <div className="mt-5 grid gap-2 sm:flex sm:flex-wrap">
                 <Button
                   type="button"
+                  className="w-full sm:w-auto"
                   onClick={() => addProductToCart(detailProduct, getSelectedQty(detailProduct.id, getRemainingStock(detailProduct)), true)}
                   disabled={getRemainingStock(detailProduct) <= 0 || getSelectedQty(detailProduct.id, getRemainingStock(detailProduct)) <= 0}
                 >
@@ -355,13 +356,14 @@ export default function ShopPage() {
                 <Button
                   type="button"
                   variant="outline"
+                  className="w-full sm:w-auto"
                   onClick={() => addProductToCart(detailProduct, 1, false)}
                   disabled={getRemainingStock(detailProduct) <= 0}
                 >
                   {t('shop.quickAddOne')}
                 </Button>
-                <Link href="/shop/cart">
-                  <Button type="button" variant="outline">
+                <Link href="/shop/cart" className="w-full sm:w-auto">
+                  <Button type="button" variant="outline" className="w-full sm:w-auto">
                     {t('product.viewCart')}
                   </Button>
                 </Link>

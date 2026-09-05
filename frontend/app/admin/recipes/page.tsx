@@ -406,7 +406,7 @@ export default function AdminRecipesPage() {
                     {lines.map((line, index) => {
                       const ingredient = ingredientById.get(line.ingredientId);
                       return (
-                        <div key={index} className="grid grid-cols-[1fr_140px_120px] gap-2">
+                        <div key={index} className="grid gap-2 sm:grid-cols-[1fr_140px_120px]">
                           <Select
                             value={line.ingredientId}
                             aria-label={`${t('admin.recipes.selectIngredient')} ${index + 1}`}
@@ -432,7 +432,7 @@ export default function AdminRecipesPage() {
                       );
                     })}
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <Button type="button" variant="outline" onClick={addLine}>
                       {t('admin.recipes.addLine')}
                     </Button>

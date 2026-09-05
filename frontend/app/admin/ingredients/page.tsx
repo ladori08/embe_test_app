@@ -695,7 +695,7 @@ export default function AdminIngredientsPage() {
           <Card>
             <div className="mb-3 flex flex-wrap justify-between gap-2">
               <p className="text-sm text-muted">{t('admin.ingredients.help')}</p>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button variant="outline" onClick={openBulkImportModal}>
                   {t('admin.ingredients.bulkImport')}
                 </Button>
@@ -1024,7 +1024,7 @@ export default function AdminIngredientsPage() {
                   </ul>
                 </div>
                 <p className="text-sm text-muted">{t('admin.ingredients.bulkImportHint')}</p>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Button type="button" variant="outline" onClick={() => void downloadTemplate()}>
                     {t('admin.ingredients.bulkImportTemplate')}
                   </Button>

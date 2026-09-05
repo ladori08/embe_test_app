@@ -236,7 +236,7 @@ export default function CheckoutPage() {
   return (
     <>
       <TopNav />
-      <main className="mx-auto max-w-3xl px-4 py-8">
+      <main className="mx-auto max-w-3xl px-3 py-5 sm:px-4 sm:py-8">
         <h1 className="mb-4 text-3xl font-script">{t('checkout.title')}</h1>
         {message ? (
           <Card className="space-y-4">
@@ -255,9 +255,9 @@ export default function CheckoutPage() {
         ) : (
           <Card className="space-y-4">
             {items.map(item => (
-              <div className="flex items-center justify-between" key={item.productId}>
-                <span>{item.name} x {item.qty}</span>
-                <span>{money(item.price * item.qty)}</span>
+              <div className="flex flex-wrap items-center justify-between gap-2" key={item.productId}>
+                <span className="break-words">{item.name} x {item.qty}</span>
+                <span className="font-medium">{money(item.price * item.qty)}</span>
               </div>
             ))}
             <div className="space-y-3 border-t border-border pt-3">
@@ -343,12 +343,12 @@ export default function CheckoutPage() {
                 />
               </div>
             </div>
-            <div className="flex items-center justify-between text-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
               <span className="text-muted">{t('common.subtotal')}</span>
               <span>{money(subtotal)}</span>
             </div>
             {paymentMethod === 'COD_DEPOSIT' ? (
-              <div className="flex items-center justify-between text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
                 <span className="text-muted">{t('checkout.depositAmount')}</span>
                 <span>{money(depositAmount)}</span>
               </div>
@@ -356,7 +356,7 @@ export default function CheckoutPage() {
             <p className="rounded-xl border border-[#f2c79f] bg-[#fff8f0] px-3 py-2 text-xs leading-relaxed text-[#8b4d1f]">
               {t('checkout.shippingFeeNotice')}
             </p>
-            <div className="flex items-center justify-between text-base font-semibold">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-base font-semibold">
               <span>{t('common.total')}</span>
               <span>{money(subtotal)}</span>
             </div>

@@ -823,7 +823,7 @@ export default function AdminProductsPage() {
                   <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
                 </FormField>
                 <FormField label={t('admin.products.category')}>
-                  <div className="flex gap-2">
+                  <div className="grid gap-2 sm:flex">
                     <Select value={form.category} onChange={e => handleCategoryChange(e.target.value)} required>
                       <option value="">{t('admin.products.selectCategory')}</option>
                       {categoryOptions.map(category => (
@@ -846,7 +846,7 @@ export default function AdminProductsPage() {
                 <FormField label={t('admin.products.skuLabel')}>
                   <Input value={form.sku} readOnly className="bg-[#f8f1e8] font-mono" />
                   {editing ? (
-                    <div className="mt-2 flex items-center gap-2">
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
                       <Button
                         type="button"
                         variant="outline"

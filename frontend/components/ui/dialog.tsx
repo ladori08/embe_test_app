@@ -30,7 +30,7 @@ export function Dialog({ open, onOpenChange, children }: DialogProps) {
   if (!open) return null;
   return (
     <DialogContext.Provider value={onOpenChange}>
-      <div className="fixed inset-0 z-50 overflow-y-auto bg-black/30 p-4">
+      <div className="fixed inset-0 z-50 overflow-y-auto bg-black/30 p-2 sm:p-4">
         <div
           className="flex min-h-full w-full items-start justify-center py-2 sm:items-center sm:py-4"
           onMouseDown={event => {
@@ -56,7 +56,7 @@ export function DialogContent({ className, hideCloseButton = false, children, ..
 
   return (
     <div
-      className={cn('relative mx-auto w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl border border-border bg-white p-5 shadow-card', className)}
+      className={cn('relative mx-auto w-full max-w-lg max-h-[92vh] overflow-y-auto rounded-2xl border border-border bg-white p-4 shadow-card sm:max-h-[90vh] sm:p-5', className)}
       onClick={e => {
         e.stopPropagation();
         onClick?.(e);

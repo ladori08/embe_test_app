@@ -35,6 +35,7 @@ services:
       MONGODB_URI: mongodb://mongodb:27017/embe?replicaSet=rs0
       JWT_SECRET: 0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF
       PRODUCT_IMAGE_STORAGE_DIR: /app/uploads/product-images
+      EMBE_CORS_ALLOWED_ORIGIN_PATTERNS: ${EMBE_CORS_ALLOWED_ORIGIN_PATTERNS:-http://localhost:*,http://127.0.0.1:*,http://192.168.1.4:*,http://macbook-pro-2.localhost:*,http://MacBook-Pro-2.local:*}
       EMBE_DATABASE_DRIVE_REMOTE: ${EMBE_DATABASE_DRIVE_REMOTE:-gdrive:EmbeBackups}
       EMBE_DATABASE_DRIVE_TEMP_DIR: /tmp/embe-database-drive
       EMBE_DATABASE_DRIVE_COMMAND_TIMEOUT_SECONDS: 300

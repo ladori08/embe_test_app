@@ -248,7 +248,7 @@ export default function AdminProductionPage() {
               </DialogHeader>
               <div className="space-y-2">
                 {overrideLines.map((line, index) => (
-                  <div key={line.ingredientId} className="grid grid-cols-[1fr_140px_90px] gap-2">
+                  <div key={line.ingredientId} className="grid gap-2 sm:grid-cols-[1fr_140px_90px]">
                     <Input value={line.ingredientName} readOnly />
                     <Input
                       type="number"

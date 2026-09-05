@@ -29,7 +29,7 @@ export function Sheet({ open, onOpenChange, children }: SheetProps) {
 }
 
 export function SheetContent({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('h-full overflow-y-auto p-6', className)} {...props} />;
+  return <div className={cn('h-full overflow-y-auto p-4 sm:p-6', className)} {...props} />;
 }
 
 export function SheetHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {

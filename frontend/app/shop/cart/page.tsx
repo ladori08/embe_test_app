@@ -15,7 +15,7 @@ export default function CartPage() {
   return (
     <>
       <TopNav />
-      <main className="mx-auto max-w-4xl px-4 py-8">
+      <main className="mx-auto max-w-4xl px-3 py-5 sm:px-4 sm:py-8">
         <h1 className="mb-4 text-3xl font-script">{t('cart.title')}</h1>
         {items.length === 0 ? (
           <Card>
@@ -27,9 +27,9 @@ export default function CartPage() {
         ) : (
           <div className="space-y-3">
             {items.map(item => (
-              <Card key={item.productId} className="flex items-center justify-between gap-4">
+              <Card key={item.productId} className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
-                  <p className="font-semibold">{item.name}</p>
+                  <p className="break-words font-semibold">{item.name}</p>
                   <p className="text-sm text-muted">{money(item.price)}</p>
                   {item.qty > item.maxQty ? (
                     <p className="mt-1 text-xs text-red-600">
@@ -37,8 +37,8 @@ export default function CartPage() {
                     </p>
                   ) : null}
                 </div>
-                <div className="flex items-center gap-4">
-                  <div className="text-right">
+                <div className="flex flex-wrap items-center justify-between gap-3 sm:justify-end sm:gap-4">
+                  <div className="text-left sm:text-right">
                     <p className="text-xs text-muted">{t('cart.lineTotal')}</p>
                     <p className="font-semibold">{money(item.price * item.qty)}</p>
                   </div>
@@ -57,7 +57,7 @@ export default function CartPage() {
                       +
                     </Button>
                   </div>
-                  <button type="button" className="text-sm text-muted underline" onClick={() => removeItem(item.productId)}>
+                  <button type="button" className="min-h-10 text-sm text-muted underline" onClick={() => removeItem(item.productId)}>
                     {t('common.remove')}
                   </button>
                 </div>

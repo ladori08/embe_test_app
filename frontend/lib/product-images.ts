@@ -1,4 +1,4 @@
-import { API_URL } from '@/lib/api';
+import { getApiUrl } from '@/lib/api';
 
 const ABSOLUTE_URL_PATTERN = /^(https?:)?\/\//i;
 const DATA_URL_PATTERN = /^data:/i;
@@ -13,7 +13,7 @@ export function resolveProductImageUrl(rawValue: string | null | undefined): str
     return value;
   }
   if (value.startsWith('/api/uploads/')) {
-    return `${API_URL.replace(/\/$/, '')}${value}`;
+    return `${getApiUrl().replace(/\/$/, '')}${value}`;
   }
   return value;
 }
